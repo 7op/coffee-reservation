@@ -17,16 +17,22 @@ dotenv.config();
 const app = express();
 const httpServer = createServer(app);
 
-// تعديل إعدادات CORS
+// تعديل المسار للملفات الثابتة
+app.use(express.static(path.join(__dirname, 'dist')));
+
+// تعديل مسار الـ API
+app.use('/api', (req, res, next) => {
+  console.log('API Request:', req.method, req.path);
+  next();
+});
+
+// تعديل CORS
 const corsOptions = {
   origin: process.env.NODE_ENV === 'production'
-    ? ['https://ramadan1.hyam.link']  // قائمة بالمواقع المسموح لها
+    ? [process.env.VERCEL_URL, 'https://coffee-reservation.vercel.app']
     : ['http://localhost:5173'],
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  credentials: true,
-  optionsSuccessStatus: 200
+  credentials: true
 };
-
 app.use(cors(corsOptions));
 
 const io = new Server(httpServer, {
@@ -239,9 +245,6 @@ app.delete('/api/auth/delete-user/:phone', async (req, res) => {
     res.status(500).json({ error: 'Failed to delete user' });
   }
 });
-
-// ثم خدمة الملفات الثابتة
-app.use(express.static(path.join(__dirname, 'dist')));
 
 // وأخيراً توجيه React - يجب أن يكون آخر شيء
 app.get('*', (req, res) => {
