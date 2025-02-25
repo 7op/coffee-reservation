@@ -28,7 +28,7 @@ app.use('/api', (req, res, next) => {
 
 // تعديل CORS
 const corsOptions = {
-  origin: true,  // يسمح لجميع المصادر في الإنتاج
+  origin: '*',  // يسمح لجميع النطاقات مؤقتاً للاختبار
   credentials: true
 };
 app.use(cors(corsOptions));
@@ -274,6 +274,7 @@ async function startServer() {
   try {
     await ensureDbConnected();
     httpServer.listen(port, () => {
+      console.log(`Server running on port ${port}`);
     });
   } catch (error) {
     process.exit(1);
