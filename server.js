@@ -28,7 +28,10 @@ app.use('/api', (req, res, next) => {
 
 // تعديل CORS
 const corsOptions = {
-  origin: '*',  // يسمح لجميع النطاقات مؤقتاً للاختبار
+  origin: [
+    'https://coffee-reservation-hyam2.vercel.app',  // النطاق الرئيسي
+    'http://localhost:5173'  // للتطوير المحلي
+  ],
   credentials: true
 };
 app.use(cors(corsOptions));
