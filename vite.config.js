@@ -25,15 +25,18 @@ export default defineConfig({
     hmr: {
       overlay: true
     },
-    proxy: {
-      '/api': {
+    proxy: process.env.NODE_ENV === 'development' ? {
+      '/api': 'http://localhost:4000',
+      '/socket.io': {
         target: 'http://localhost:4000',
-        changeOrigin: true
+        ws: true
       }
-    }
+    } : {}
   },
   build: {
     outDir: 'dist',
+    assetsDir: 'assets',
+    emptyOutDir: true,
     sourcemap: false,
     minify: true
   },

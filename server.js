@@ -28,9 +28,7 @@ app.use('/api', (req, res, next) => {
 
 // تعديل CORS
 const corsOptions = {
-  origin: process.env.NODE_ENV === 'production'
-    ? [process.env.VERCEL_URL, 'https://coffee-reservation.vercel.app']
-    : ['http://localhost:5173'],
+  origin: true,  // يسمح لجميع المصادر في الإنتاج
   credentials: true
 };
 app.use(cors(corsOptions));
