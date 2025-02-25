@@ -1,4 +1,6 @@
-export const SERVER_URL = '';  // فارغ ليستخدم نفس النطاق
+export const SERVER_URL = process.env.NODE_ENV === 'production'
+  ? ''  // سيستخدم نفس النطاق
+  : 'http://localhost:4000';
 
 export const API_ENDPOINTS = {
   login: '/api/auth/login',
