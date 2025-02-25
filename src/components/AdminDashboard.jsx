@@ -35,10 +35,7 @@ import {
   Divider,
   Checkbox
 } from '@mui/material';
-import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
-import { db } from '../firebase/config';
-import SearchIcon from '@mui/icons-material/Search';
-import FilterListIcon from '@mui/icons-material/FilterList';
+import { query, orderBy } from 'firebase/firestore';
 import { format, parseISO } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { TimePicker, DatePicker } from '@mui/x-date-pickers';
@@ -943,15 +940,94 @@ const AdminDashboard = () => {
   // حساب الإحصائيات
   const stats = getStatistics(bookings);
 
-  // دالة فتح قائمة الإعدادات
-  const handleSettingsClick = (event) => {
-    setAnchorEl(event.currentTarget);
+  // دالة تحديد/إلغاء تحديد كل الحجوزات
+  const handleSelectAll = (event) => {
+    if (event.target.checked) {
+      setSelectedBookings(filteredBookings.map(booking => booking._id));
+    } else {
+      setSelectedBookings([]);
+    }
   };
 
-  // دالة إغلاق قائمة الإعدادات
-  const handleClose = () => {
-    setAnchorEl(null);
+  // دالة تحديد/إلغاء تحديد حجز واحد
+  const handleSelectOne = (bookingId) => {
+    setSelectedBookings(prev => {
+      if (prev.includes(bookingId)) {
+        return prev.filter(id => id !== bookingId);
+      } else {
+        return [...prev, bookingId];
+      }
+    });
   };
+
+  // دالة حذف الحجوزات المحددة
+  const handleDeleteSelected = () => {
+    if (selectedBookings.length === 0) return;
+    
+    setDeleteConfirm({
+      open: true,
+      multiple: true,
+      bookingId: null
+    });
+  };
+
+  // تعديل دالة الحذف لتدعم الحذف المتعدد
+  const handleDeleteBooking = async (bookingId) => {
+    try {
+      if (deleteConfirm.multiple) {
+        // حذف متعدد
+        for (const id of selectedBookings) {
+          await fetch(`${SERVER_URL}/bookings/${id}`, {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          });
+        }
+        setSelectedBookings([]);
+      } else {
+        // حذف واحد
+        await fetch(`${SERVER_URL}/bookings/${bookingId}`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+      setDeleteConfirm({ open: false, multiple: false, bookingId: null });
+    } catch (error) {
+      console.error('Error deleting booking(s):', error);
+      alert('حدث خطأ أثناء الحذف');
+    }
+  };
+
+  // دالة تعديل دالة الحذف لتدعم الحذف المتعدد
+  const handleDeleteBookingMultiple = async (bookingIds) => {
+    try {
+      // حذف متعدد
+      for (const id of bookingIds) {
+        await fetch(`${SERVER_URL}/bookings/${id}`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+      setSelectedBookings([]);
+      setDeleteConfirm({ open: false, multiple: false, bookingId: null });
+    } catch (error) {
+      console.error('Error deleting booking(s):', error);
+      alert('حدث خطأ أثناء الحذف');
+    }
+  };
+
+  // دالة إغلاق مربع حوار التأكيد
+  const closeDeleteConfirm = () => {
+    setDeleteConfirm({ open: false, multiple: false, bookingId: null });
+  };
+
+  // حساب الإحصائيات
+  const stats = getStatistics(bookings);
 
   // دالة تغيير حالة الحجز
   const handleBookingToggle = async () => {
