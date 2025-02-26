@@ -13,6 +13,7 @@ import { styled } from '@mui/material/styles';
 import { collection, addDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import io from 'socket.io-client';
+import { SERVER_URL, API_ENDPOINTS } from '../config';
 
 // تصميم مخصص للورقة
 const StyledPaper = styled(Paper)(({ theme }) => ({
@@ -117,8 +118,6 @@ const Logo = styled('img')(({ theme }) => ({
   },
 }));
 
-const SERVER_URL = 'http://localhost:5000';
-
 const StyledContainer = styled(Container)(({ theme }) => ({
   [theme.breakpoints.up('sm')]: {
     padding: 0  // إلغاء جميع الـ padding في الشاشات المتوسطة والكبيرة
@@ -143,7 +142,7 @@ const BookingForm = () => {
   useEffect(() => {
     const fetchBookingStatus = async () => {
       try {
-        const response = await fetch(`${SERVER_URL}/settings/booking`);
+        const response = await fetch(`${SERVER_URL}/api/settings/booking`);
         const data = await response.json();
         setIsBookingEnabled(data.enabled);
       } catch (error) {
@@ -175,7 +174,7 @@ const BookingForm = () => {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const response = await fetch(`${SERVER_URL}/settings`);
+        const response = await fetch(`${SERVER_URL}/api/settings/maxGuests`);
         if (response.ok) {
           const data = await response.json();
           if (data.maxGuests) {
@@ -228,7 +227,7 @@ const BookingForm = () => {
       return;
     }
     try {
-      const response = await fetch(`${SERVER_URL}/bookings`, {
+      const response = await fetch(`${SERVER_URL}${API_ENDPOINTS.bookings}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

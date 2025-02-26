@@ -1,12 +1,12 @@
 <IfModule mod_rewrite.c>
   RewriteEngine On
-  RewriteBase /
   
-  # إذا كان الطلب يبدأ بـ /api، قم بتوجيهه إلى server.js
-  RewriteCond %{REQUEST_URI} ^/api/.*
-  RewriteRule ^(.*)$ http://localhost:4000/$1 [P,L]
+  # إعادة توجيه الطلبات من localhost إلى Render
+  RewriteCond %{HTTP_HOST} ^localhost$ [OR]
+  RewriteCond %{REQUEST_URI} ^/api/(.*)$
+  RewriteRule ^api/(.*)$ https://coffee-reservation.onrender.com/api/$1 [P,L]
   
-  # لباقي الطلبات، وجه إلى index.html
+  # توجيه كل الطلبات الأخرى إلى index.html
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
   RewriteRule . /index.html [L]

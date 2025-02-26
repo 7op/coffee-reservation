@@ -176,6 +176,25 @@ app.post('/auth/create-user', async (req, res) => {
   }
 });
 
+// إضافة مسار جديد لإرجاع جميع الإعدادات
+app.get('/api/settings', async (req, res) => {
+  try {
+    await ensureDbConnected();
+    const cursor = settingsCollection.find({});
+    const settings = await cursor.toArray();
+    
+    // تحويل مصفوفة الإعدادات إلى كائن واحد
+    const settingsObj = settings.reduce((obj, setting) => {
+      obj[setting.type] = setting;
+      return obj;
+    }, {});
+    
+    res.json(settingsObj);
+  } catch (error) {
+    res.status(500).json({ error: 'فشل في جلب الإعدادات' });
+  }
+});
+
 // الاتصال بقاعدة البيانات
 const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/coffee-reservation';
 const client = new MongoClient(uri);

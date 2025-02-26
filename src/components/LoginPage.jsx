@@ -15,6 +15,7 @@ import PhoneIcon from '@mui/icons-material/Phone';
 import LockIcon from '@mui/icons-material/Lock';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import { SERVER_URL, API_ENDPOINTS } from '../config';
 
 // تصميم الصفحة الكاملة
 const PageWrapper = styled(Box)({
@@ -108,9 +109,6 @@ const Logo = styled('img')({
   marginBottom: 24,
 });
 
-// تعديل عنوان الخادم
-const SERVER_URL = 'http://localhost:5000';
-
 const LoginPage = () => {
   const navigate = useNavigate();
   const [phone, setPhone] = useState('');
@@ -123,7 +121,7 @@ const LoginPage = () => {
     setError(''); // مسح الأخطاء السابقة
     
     try {
-      const response = await fetch(`${SERVER_URL}/api/auth/login`, {
+      const response = await fetch(`${SERVER_URL}${API_ENDPOINTS.login}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

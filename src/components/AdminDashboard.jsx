@@ -61,6 +61,7 @@ import 'swiper/css/pagination';
 import { Pagination } from 'swiper/modules';
 import LogoutIcon from '@mui/icons-material/Logout';
 import { useNavigate } from 'react-router-dom';
+import { SERVER_URL, API_ENDPOINTS } from '../config';
 
 // تصميم الصفحة الرئيسية
 const PageWrapper = styled(Box)(({ theme }) => ({
@@ -391,26 +392,20 @@ const getStatistics = (bookings) => {
   };
 };
 
-// تعديل عنوان الخادم
-const SERVER_URL = 'http://localhost:5000';
+// إضافة مكون جديد للأيقونة المتحركة
+const RotatingIcon = styled(RestartAltIcon)(({ isrotating }) => ({
+  animation: isrotating === 'true' ? 'rotateIcon 0.6s cubic-bezier(0.4, 0, 0.2, 1)' : 'none',
+  '@keyframes rotateIcon': {
+    '0%': {
+      transform: 'rotate(0deg)'
+    },
+    '100%': {
+      transform: 'rotate(-720deg)'  // تغيير إلى قيمة سالبة للدوران عكس عقارب الساعة
+    }
+  }
+}));
 
-// إضافة دالة لتنسيق الوقت
-const formatTime = (time) => {
-  if (!time) return '';
-  
-  const [hours, minutes] = time.split(':');
-  const hour = parseInt(hours);
-  
-  // تحديد ص أو م
-  const period = hour >= 12 ? 'م' : 'ص';
-  
-  // تحويل الساعة إلى نظام 12 ساعة
-  const displayHour = hour > 12 ? hour - 12 : (hour === 0 ? 12 : hour);
-  
-  return `${displayHour}:${minutes} ${period}`;
-};
-
-// إضافة مكون الهيدر
+// إضافة مكون الهيدر (يجب إضافته بعد التعريفات الأخرى في الملف)
 const StyledHeader = styled('header')(({ theme, scrolled }) => ({
   position: 'fixed',
   top: 0,
@@ -496,10 +491,10 @@ const TitleContainer = styled(Box)(({ theme }) => ({
     content: '""',
     position: 'absolute',
     left: 0,
-    bottom: -4,  // تعديل المسافة للأسفل قليلاً
-    width: '100%',  // تمديد الخط ليغطي العرض كاملاً
+    bottom: -4,
+    width: '100%',
     height: '2px',
-    background: 'linear-gradient(90deg, #2687f2 30%, rgba(38, 135, 242, 0.2))',  // تعديل التدرج
+    background: 'linear-gradient(90deg, #2687f2 30%, rgba(38, 135, 242, 0.2))',
     transition: 'opacity 0.3s ease',
     opacity: 0.7
   },
@@ -508,56 +503,50 @@ const TitleContainer = styled(Box)(({ theme }) => ({
   }
 }));
 
+// إضافة دالة لتنسيق الوقت
+const formatTime = (time) => {
+  if (!time) return '';
+  
+  const [hours, minutes] = time.split(':');
+  const hour = parseInt(hours);
+  
+  // تحديد ص أو م
+  const period = hour >= 12 ? 'م' : 'ص';
+  
+  // تحويل الساعة إلى نظام 12 ساعة
+  const displayHour = hour > 12 ? hour - 12 : (hour === 0 ? 12 : hour);
+  
+  return `${displayHour}:${minutes} ${period}`;
+};
+
 // دالة لحساب يوم رمضان
 const getRamadanDay = () => {
   const today = new Date();
-  const ramadanStart = new Date('2024-03-11'); // تاريخ بداية رمضان 1446
-  const ramadanEnd = new Date('2024-04-09');   // تاريخ نهاية رمضان 1446
-  const eidEnd = new Date('2024-04-15');       // نهاية فترة العيد (6 أيام)
-  const nextRamadanStart = new Date('2025-03-01'); // تاريخ بداية رمضان القادم
+  const ramadanStart = new Date('2024-03-11');
+  const ramadanEnd = new Date('2024-04-09');
+  const eidEnd = new Date('2024-04-15');
+  const nextRamadanStart = new Date('2025-03-01');
   
-  // تعيين الوقت إلى منتصف الليل للمقارنة الدقيقة
   today.setHours(0, 0, 0, 0);
   ramadanStart.setHours(0, 0, 0, 0);
   ramadanEnd.setHours(0, 0, 0, 0);
   eidEnd.setHours(0, 0, 0, 0);
   nextRamadanStart.setHours(0, 0, 0, 0);
-
-  // حساب الفرق بالأيام
+  
   const diffFromStart = Math.floor((ramadanStart - today) / (1000 * 60 * 60 * 24));
   const dayOfRamadan = Math.floor((today - ramadanStart) / (1000 * 60 * 60 * 24)) + 1;
   const diffToNextRamadan = Math.floor((nextRamadanStart - today) / (1000 * 60 * 60 * 24));
-
-  // قبل رمضان
+  
   if (today < ramadanStart) {
     return `-${diffFromStart}`;
-  }
-  // خلال رمضان
-  else if (today >= ramadanStart && today <= ramadanEnd) {
+  } else if (today >= ramadanStart && today <= ramadanEnd) {
     return dayOfRamadan;
-  }
-  // خلال فترة العيد (6 أيام)
-  else if (today > ramadanEnd && today <= eidEnd) {
+  } else if (today > ramadanEnd && today <= eidEnd) {
     return 'عيدكم مبارك';
-  }
-  // بعد العيد - بداية العد التنازلي لرمضان القادم
-  else {
+  } else {
     return `-${diffToNextRamadan}`;
   }
 };
-
-// إضافة مكون جديد للأيقونة المتحركة
-const RotatingIcon = styled(RestartAltIcon)(({ isrotating }) => ({
-  animation: isrotating === 'true' ? 'rotateIcon 0.6s cubic-bezier(0.4, 0, 0.2, 1)' : 'none',
-  '@keyframes rotateIcon': {
-    '0%': {
-      transform: 'rotate(0deg)'
-    },
-    '100%': {
-      transform: 'rotate(-720deg)'  // تغيير إلى قيمة سالبة للدوران عكس عقارب الساعة
-    }
-  }
-}));
 
 const AdminDashboard = () => {
   const [bookings, setBookings] = useState([]);
