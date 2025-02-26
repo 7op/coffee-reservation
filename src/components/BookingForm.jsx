@@ -279,7 +279,6 @@ const BookingForm = () => {
               <Typography 
                 variant="subtitle1" 
                 color="text.secondary" 
-                mb={4}
                 sx={{
                   fontSize: { xs: '0.875rem', sm: '1rem' },
                   fontFamily: 'Tajawal, sans-serif',

@@ -195,6 +195,40 @@ app.get('/api/settings', async (req, res) => {
   }
 });
 
+// نقطة نهاية لضبط وإرجاع الحد الأقصى للأشخاص
+app.get('/api/settings/maxGuests', async (req, res) => {
+  try {
+    await ensureDbConnected();
+    const setting = await settingsCollection.findOne({ type: 'maxGuests' });
+    res.json({ maxGuests: setting?.value || 10 });
+  } catch (error) {
+    res.status(500).json({ error: 'فشل في جلب الإعدادات' });
+  }
+});
+
+app.post('/api/settings/maxGuests', async (req, res) => {
+  try {
+    await ensureDbConnected();
+    const { maxGuests } = req.body;
+    
+    const result = await settingsCollection.updateOne(
+      { type: 'maxGuests' },
+      { $set: { value: parseInt(maxGuests) } },
+      { upsert: true }
+    );
+    
+    if (result.acknowledged) {
+      // إرسال إشعار للعملاء
+      io.emit('settingsUpdated', { maxGuests: parseInt(maxGuests) });
+      res.json({ success: true });
+    } else {
+      throw new Error('فشل في تحديث الإعدادات');
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'فشل في تحديث الإعدادات' });
+  }
+});
+
 // الاتصال بقاعدة البيانات
 const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/coffee-reservation';
 const client = new MongoClient(uri);
