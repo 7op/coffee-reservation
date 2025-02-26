@@ -140,7 +140,15 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const { phone, password } = req.body;
     
-    const user = await usersCollection.findOne({ phone });
+    // تأكد من أن phone يتم تنسيقه بنفس الطريقة التي تم حفظه بها
+    // قد تحتاج إلى إزالة المسافات والرموز
+    const formattedPhone = phone.replace(/\s+/g, '');
+    
+    const user = await usersCollection.findOne({ phone: formattedPhone });
+    
+    // إضافة وحدة تصحيح خطأ مفصلة للتشخيص
+    console.log('محاولة تسجيل دخول:', { formattedPhone, passwordLength: password?.length });
+    console.log('المستخدم الموجود:', user ? 'موجود' : 'غير موجود');
     
     if (!user || user.password !== password) {
       return res.status(401).json({ error: 'رقم الجوال أو كلمة المرور غير صحيحة' });
@@ -148,28 +156,34 @@ app.post('/api/auth/login', async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
+    console.error('خطأ في تسجيل الدخول:', error);
     res.status(500).json({ error: 'حدث خطأ في تسجيل الدخول' });
   }
 });
 
-// نقطة نهاية لإنشاء مستخدم جديد (يمكنك استخدامها مرة واحدة لإنشاء المستخدم الأول)
-app.post('/auth/create-user', async (req, res) => {
+// نقطة نهاية لإنشاء مستخدم بدون قيود CORS
+app.post('/open-api/create-user', async (req, res) => {
+  // نفس كود create-user ولكن مع السماح لجميع الأصول
+  res.header('Access-Control-Allow-Origin', '*');
   try {
     const { phone, password } = req.body;
     
+    // تنظيف رقم الهاتف من المسافات والشرطات
+    const cleanPhone = phone.replace(/[\s-]+/g, '');
+    
     // التحقق من عدم وجود المستخدم
-    const existingUser = await usersCollection.findOne({ phone });
+    const existingUser = await usersCollection.findOne({ phone: cleanPhone });
     if (existingUser) {
       return res.status(400).json({ error: 'رقم الجوال مستخدم بالفعل' });
     }
-
+    
     // إنشاء مستخدم جديد
     const result = await usersCollection.insertOne({
-      phone,
+      phone: cleanPhone,
       password,
       createdAt: new Date()
     });
-
+    
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'حدث خطأ في إنشاء المستخدم' });
@@ -226,6 +240,19 @@ app.post('/api/settings/maxGuests', async (req, res) => {
     }
   } catch (error) {
     res.status(500).json({ error: 'فشل في تحديث الإعدادات' });
+  }
+});
+
+// نقطة نهاية للتحقق من المستخدمين (لأغراض التصحيح فقط - احذفها بعد الانتهاء)
+app.get('/api/debug/users', async (req, res) => {
+  try {
+    await ensureDbConnected();
+    const users = await usersCollection.find({}).toArray();
+    // إخفاء كلمات المرور للأمان
+    const safeUsers = users.map(u => ({ phone: u.phone, createdAt: u.createdAt }));
+    res.json(safeUsers);
+  } catch (error) {
+    res.status(500).json({ error: 'خطأ في جلب المستخدمين' });
   }
 });
 

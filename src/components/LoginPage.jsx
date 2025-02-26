@@ -129,6 +129,8 @@ const LoginPage = () => {
         body: JSON.stringify({ phone, password })
       });
 
+      console.log('استجابة تسجيل الدخول:', response.status);
+      
       const data = await response.json();
       
       if (!response.ok) {
@@ -140,6 +142,7 @@ const LoginPage = () => {
         navigate('/admin');
       }
     } catch (error) {
+      console.error('خطأ في تسجيل الدخول:', error);
       setError(error.message || 'حدث خطأ في الاتصال بالخادم');
     }
   };

@@ -32,9 +32,12 @@ async function createUser() {
       return;
     }
     
-    // إنشاء المستخدم
+    // تنسيق رقم الهاتف قبل الحفظ (إزالة المسافات والشرطات)
+    const cleanPhone = phone.replace(/[\s-]+/g, '');
+    
+    // إنشاء المستخدم بالتنسيق النظيف
     const result = await users.insertOne({
-      phone,
+      phone: cleanPhone,  // استخدام الرقم المنسق
       password,
       createdAt: new Date()
     });
