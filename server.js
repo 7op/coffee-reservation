@@ -16,7 +16,7 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: ["http://localhost:5173", "https://your-frontend-domain.com"],
+    origin: ["http://localhost:5173", "https://6lb.online"],
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true
   }
@@ -29,7 +29,7 @@ app.use((req, res, next) => {
 });
 
 app.use(cors({
-  origin: ["http://localhost:5173", "https://your-frontend-domain.com"],
+  origin: ["http://localhost:5173", "https://6lb.online"],
   methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true
 }));
