@@ -41,8 +41,13 @@ let bookingsCollection;
 let settingsCollection;
 let usersCollection;
 
+// أضف هذا في بداية تعريف المسارات
+app.get('/', (req, res) => {
+  res.json({ message: 'مرحباً بكم في واجهة برمجة تطبيق حجز القهوة' });
+});
+
 // تعريف نقاط النهاية
-app.get('/settings/booking', async (req, res) => {
+app.get('/api/settings/booking', async (req, res) => {
   try {
     await ensureDbConnected();
     const settings = await settingsCollection.findOne({ type: 'booking' });
@@ -52,7 +57,7 @@ app.get('/settings/booking', async (req, res) => {
   }
 });
 
-app.post('/settings/booking', async (req, res) => {
+app.post('/api/settings/booking', async (req, res) => {
   try {
     await ensureDbConnected();
     const { enabled } = req.body;
@@ -75,7 +80,7 @@ app.post('/settings/booking', async (req, res) => {
 });
 
 // إضافة حجز جديد
-app.post('/bookings', async (req, res) => {
+app.post('/api/bookings', async (req, res) => {
   try {
     // التحقق من حالة الحجز
     const settings = await settingsCollection.findOne({ type: 'booking' });
@@ -98,14 +103,14 @@ app.post('/bookings', async (req, res) => {
 });
 
 // جلب جميع الحجوزات
-app.get('/bookings', async (req, res) => {
+app.get('/api/bookings', async (req, res) => {
   const cursor = bookingsCollection.find({}).sort({ createdAt: -1 });
   const bookings = await cursor.toArray();
   res.json(bookings);
 });
 
 // إضافة نقطة نهاية لحذف الحجز
-app.delete('/bookings/:id', async (req, res) => {
+app.delete('/api/bookings/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -131,7 +136,7 @@ app.delete('/bookings/:id', async (req, res) => {
 });
 
 // نقطة نهاية لتسجيل الدخول
-app.post('/auth/login', async (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   try {
     const { phone, password } = req.body;
     

@@ -613,7 +613,7 @@ const AdminDashboard = () => {
 
     const fetchBookings = async () => {
       try {
-        const response = await fetch(`${SERVER_URL}/bookings`);
+        const response = await fetch(`${SERVER_URL}/api/bookings`);
         const data = await response.json();
         
         if (data.length > previousBookingsLength.current && isSoundEnabled) {
@@ -695,7 +695,7 @@ const AdminDashboard = () => {
   useEffect(() => {
     const fetchBookingStatus = async () => {
       try {
-        const response = await fetch(`${SERVER_URL}/settings/booking`);
+        const response = await fetch(`${SERVER_URL}/api/settings/booking`);
         if (!response.ok) {
           throw new Error('فشل في جلب حالة الحجز');
         }
@@ -855,7 +855,7 @@ const AdminDashboard = () => {
       handleClose();
       const newState = !bookingEnabled;
       
-      const response = await fetch(`${SERVER_URL}/settings/booking`, {
+      const response = await fetch(`${SERVER_URL}/api/settings/booking`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -924,7 +924,7 @@ const AdminDashboard = () => {
       setTimeout(async () => {
         const updateBookingStatus = async () => {
           try {
-            const response = await fetch(`${SERVER_URL}/settings/booking`, {
+            const response = await fetch(`${SERVER_URL}/api/settings/booking`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json'
@@ -960,7 +960,7 @@ const AdminDashboard = () => {
     // إعادة تفعيل الحجز عند تغيير الحد الأقصى
     const updateBookingStatus = async () => {
       try {
-        const response = await fetch(`${SERVER_URL}/settings/booking`, {
+        const response = await fetch(`${SERVER_URL}/api/settings/booking`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -993,7 +993,7 @@ const AdminDashboard = () => {
     // تحديث الإعدادات في الخادم
     const updateSettings = async () => {
       try {
-        const response = await fetch(`${SERVER_URL}/settings/maxGuests`, {
+        const response = await fetch(`${SERVER_URL}/api/settings/maxGuests`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
