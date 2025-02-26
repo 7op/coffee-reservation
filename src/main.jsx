@@ -12,7 +12,6 @@ import { prefixer } from 'stylis'
 import { ramadanTheme } from './theme/ramadanTheme.js'
 import { LocalizationProvider } from '@mui/x-date-pickers'
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
-import './styles/global.css'
 
 // إنشاء كاش للـ RTL
 const cacheRtl = createCache({

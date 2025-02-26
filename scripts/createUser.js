@@ -1,53 +1,27 @@
 import fetch from 'node-fetch';
-import bcrypt from 'bcrypt';
-import dotenv from 'dotenv';
 
-dotenv.config();
-
-const SERVER_URL = process.env.NODE_ENV === 'production'
-  ? 'https://ramadan1.hyam.link'
-  : 'http://localhost:4000';
-
-async function createUser(phone, password) {
+const createUser = async () => {
   try {
-    const hashedPassword = await bcrypt.hash(password, 10);
-    
-    console.log('Attempting to create user with:', {
-      url: `${SERVER_URL}/api/auth/create-user`,
-      phone
-    });
-
-    const response = await fetch(`${SERVER_URL}/api/auth/create-user`, {
+    const response = await fetch('http://localhost:5000/auth/create-user', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        phone,
-        password: hashedPassword
+        phone: '0599999999',    // رقم جوال جديد
+        password: '123456'      // كلمة المرور
       })
     });
 
-    if (!response.ok) {
-      const text = await response.text();
-      console.error('Server response:', text);
-      throw new Error(`Server responded with status ${response.status}`);
-    }
-
     const data = await response.json();
-    console.log('User created successfully:', data);
+    if (data.success) {
+      console.log('✓ تم إنشاء المستخدم بنجاح');
+    } else {
+      console.log('❌ فشل إنشاء المستخدم:', data.error);
+    }
   } catch (error) {
-    console.error('Error creating user:', error.message);
-    process.exit(1);
+    console.error('❌ خطأ في الاتصال:', error);
   }
-}
+};
 
-const phone = process.argv[2];
-const password = process.argv[3];
-
-if (!phone || !password) {
-  console.error('Please provide phone and password');
-  process.exit(1);
-}
-
-createUser(phone, password); 
+createUser(); 

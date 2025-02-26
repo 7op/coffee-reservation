@@ -24,25 +24,9 @@ export default defineConfig({
     port: 5173,
     hmr: {
       overlay: true
-    },
-    proxy: process.env.NODE_ENV === 'development' ? {
-      '/api': 'http://localhost:4000',
-      '/socket.io': {
-        target: 'http://localhost:4000',
-        ws: true
-      }
-    } : {}
+    }
   },
   build: {
-    outDir: 'dist',
-    assetsDir: 'assets',
-    emptyOutDir: true,
-    sourcemap: false,
-    minify: true
-  },
-  base: '/',
-  preview: {
-    port: 4000,
-    host: true
+    sourcemap: false
   }
 }) 

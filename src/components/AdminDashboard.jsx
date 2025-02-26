@@ -35,7 +35,10 @@ import {
   Divider,
   Checkbox
 } from '@mui/material';
-import { query, orderBy } from 'firebase/firestore';
+import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
+import { db } from '../firebase/config';
+import SearchIcon from '@mui/icons-material/Search';
+import FilterListIcon from '@mui/icons-material/FilterList';
 import { format, parseISO } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { TimePicker, DatePicker } from '@mui/x-date-pickers';
@@ -58,7 +61,6 @@ import 'swiper/css/pagination';
 import { Pagination } from 'swiper/modules';
 import LogoutIcon from '@mui/icons-material/Logout';
 import { useNavigate } from 'react-router-dom';
-import { SERVER_URL, API_ENDPOINTS } from '../config';
 
 // تصميم الصفحة الرئيسية
 const PageWrapper = styled(Box)(({ theme }) => ({
@@ -74,26 +76,7 @@ const PageWrapper = styled(Box)(({ theme }) => ({
     )
   `,
   backgroundSize: '40px 40px',
-  // تعديل خصائص التمرير
-  position: 'relative',
-  overflowY: 'auto',
-
-  // إخفاء شريط التمرير مع الاحتفاظ بالوظيفة
-  '&::-webkit-scrollbar': {
-    display: 'none'  // لمتصفحات Chrome و Safari
-  },
-  scrollbarWidth: 'none',  // لمتصفح Firefox
-  msOverflowStyle: 'none',  // لمتصفح IE و Edge
-  
-  // تطبيق نفس الخصائص على جميع العناصر الداخلية التي تحتوي على scrollbar
-  '& *::-webkit-scrollbar': {
-    display: 'none'
-  },
-  '& *': {
-    scrollbarWidth: 'none',
-    msOverflowStyle: 'none'
-  },
-
+  // إضافة padding مختلف للشاشات الكبيرة
   [theme.breakpoints.up('md')]: {
     padding: theme.spacing(4, 8)
   },
@@ -408,6 +391,9 @@ const getStatistics = (bookings) => {
   };
 };
 
+// تعديل عنوان الخادم
+const SERVER_URL = 'http://localhost:5000';
+
 // إضافة دالة لتنسيق الوقت
 const formatTime = (time) => {
   if (!time) return '';
@@ -573,73 +559,6 @@ const RotatingIcon = styled(RestartAltIcon)(({ isrotating }) => ({
   }
 }));
 
-// تعديل مربع حوار تأكيد تسجيل الخروج
-const LogoutDialog = ({ open, onClose, onConfirm }) => (
-  <Dialog 
-    open={open} 
-    onClose={onClose}
-    // إزالة aria-hidden
-    BackdropProps={{
-      'aria-hidden': 'false'
-    }}
-    PaperProps={{
-      sx: {
-        borderRadius: 2,
-        p: 2,
-        maxWidth: '400px'
-      }
-    }}
-  >
-    <DialogTitle sx={{ 
-      textAlign: 'center',
-      fontWeight: 700,
-      color: '#1f365c'
-    }}>
-      تأكيد تسجيل الخروج
-    </DialogTitle>
-    <DialogContent>
-      <Typography sx={{ textAlign: 'center', mt: 1 }}>
-        هل أنت متأكد من تسجيل الخروج؟
-      </Typography>
-    </DialogContent>
-    <DialogActions sx={{ justifyContent: 'center', gap: 2, mt: 2 }}>
-      <Button
-        onClick={onClose}
-        variant="outlined"
-        sx={{
-          minWidth: '100px',
-          borderRadius: 2,
-          color: 'text.secondary',
-          borderColor: 'rgba(0, 0, 0, 0.12)',
-          '&:hover': {
-            borderColor: 'rgba(0, 0, 0, 0.24)',
-            background: 'rgba(0, 0, 0, 0.04)'
-          }
-        }}
-      >
-        إلغاء
-      </Button>
-      <Button
-        onClick={onConfirm}
-        variant="contained"
-        color="error"
-        sx={{
-          minWidth: '100px',
-          borderRadius: 2,
-          background: 'linear-gradient(45deg, #d32f2f 30%, #f44336 90%)',
-          boxShadow: '0 2px 4px rgba(211, 47, 47, .2)',
-          '&:hover': {
-            background: 'linear-gradient(45deg, #c62828 30%, #d32f2f 90%)',
-            boxShadow: '0 3px 6px rgba(211, 47, 47, .3)'
-          }
-        }}
-      >
-        تأكيد
-      </Button>
-    </DialogActions>
-  </Dialog>
-);
-
 const AdminDashboard = () => {
   const [bookings, setBookings] = useState([]);
   const [filteredBookings, setFilteredBookings] = useState([]);
@@ -677,8 +596,8 @@ const AdminDashboard = () => {
     const saved = localStorage.getItem('maxGuestsPerBooking');
     return saved ? parseInt(saved) : 10;  // القيمة الافتراضية 10
   });
-  // إضافة state جديد لإجمالي عدد الأشخاص
-  const [totalGuests, setTotalGuests] = useState(0);
+  // في بداية المكون AdminDashboard أضف مرجعاً للحقل
+  const searchInputRef = useRef(null);
 
   useEffect(() => {
     audioRef.current = new Audio('/notification.mp3');
@@ -776,7 +695,7 @@ const AdminDashboard = () => {
   useEffect(() => {
     const fetchBookingStatus = async () => {
       try {
-        const response = await fetch(`${SERVER_URL}${API_ENDPOINTS.settings}`);
+        const response = await fetch(`${SERVER_URL}/settings/booking`);
         if (!response.ok) {
           throw new Error('فشل في جلب حالة الحجز');
         }
@@ -816,23 +735,18 @@ const AdminDashboard = () => {
     setPage(0);
   };
 
-  // دالة إعادة تعيين الفلاتر
-  const handleResetFilters = () => {
-    setSearchTerm('');
-    setDateFilter(null);
-    setTimeRange({
-      start: null,
-      end: null
-    });
-    // إضافة إعادة تعيين التحديد
-    setSelectedBookings([]);
-    
-    // تأثير الدوران
-    setIsRotating(true);
-    setTimeout(() => setIsRotating(false), 600);
-    
-    // تحديث الحجوزات المعروضة
-    setFilteredBookings(bookings);
+  // تعديل دالة إعادة التعيين
+  const handleReset = () => {
+    if (!isRotating) {
+      setIsRotating(true);
+      setSearchTerm('');
+      setDateFilter(null);
+      setTimeRange({ start: null, end: null });
+      
+      setTimeout(() => {
+        setIsRotating(false);
+      }, 600); // نفس مدة الأنيميشن
+    }
   };
 
   // تحديث دالة تبديل الصوت
@@ -912,24 +826,9 @@ const AdminDashboard = () => {
     }
   };
 
-  // دالة تعديل دالة الحذف لتدعم الحذف المتعدد
-  const handleDeleteBookingMultiple = async (bookingIds) => {
-    try {
-      // حذف متعدد
-      for (const id of bookingIds) {
-        await fetch(`${SERVER_URL}/bookings/${id}`, {
-          method: 'DELETE',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-      }
-      setSelectedBookings([]);
-      setDeleteConfirm({ open: false, multiple: false, bookingId: null });
-    } catch (error) {
-      console.error('Error deleting booking(s):', error);
-      alert('حدث خطأ أثناء الحذف');
-    }
+  // دالة فتح مربع حوار التأكيد
+  const openDeleteConfirm = (bookingId) => {
+    setDeleteConfirm({ open: true, multiple: false, bookingId });
   };
 
   // دالة إغلاق مربع حوار التأكيد
@@ -940,94 +839,15 @@ const AdminDashboard = () => {
   // حساب الإحصائيات
   const stats = getStatistics(bookings);
 
-  // دالة تحديد/إلغاء تحديد كل الحجوزات
-  const handleSelectAll = (event) => {
-    if (event.target.checked) {
-      setSelectedBookings(filteredBookings.map(booking => booking._id));
-    } else {
-      setSelectedBookings([]);
-    }
+  // دالة فتح قائمة الإعدادات
+  const handleSettingsClick = (event) => {
+    setAnchorEl(event.currentTarget);
   };
 
-  // دالة تحديد/إلغاء تحديد حجز واحد
-  const handleSelectOne = (bookingId) => {
-    setSelectedBookings(prev => {
-      if (prev.includes(bookingId)) {
-        return prev.filter(id => id !== bookingId);
-      } else {
-        return [...prev, bookingId];
-      }
-    });
+  // دالة إغلاق قائمة الإعدادات
+  const handleClose = () => {
+    setAnchorEl(null);
   };
-
-  // دالة حذف الحجوزات المحددة
-  const handleDeleteSelected = () => {
-    if (selectedBookings.length === 0) return;
-    
-    setDeleteConfirm({
-      open: true,
-      multiple: true,
-      bookingId: null
-    });
-  };
-
-  // تعديل دالة الحذف لتدعم الحذف المتعدد
-  const handleDeleteBooking = async (bookingId) => {
-    try {
-      if (deleteConfirm.multiple) {
-        // حذف متعدد
-        for (const id of selectedBookings) {
-          await fetch(`${SERVER_URL}/bookings/${id}`, {
-            method: 'DELETE',
-            headers: {
-              'Content-Type': 'application/json'
-            }
-          });
-        }
-        setSelectedBookings([]);
-      } else {
-        // حذف واحد
-        await fetch(`${SERVER_URL}/bookings/${bookingId}`, {
-          method: 'DELETE',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-      }
-      setDeleteConfirm({ open: false, multiple: false, bookingId: null });
-    } catch (error) {
-      console.error('Error deleting booking(s):', error);
-      alert('حدث خطأ أثناء الحذف');
-    }
-  };
-
-  // دالة تعديل دالة الحذف لتدعم الحذف المتعدد
-  const handleDeleteBookingMultiple = async (bookingIds) => {
-    try {
-      // حذف متعدد
-      for (const id of bookingIds) {
-        await fetch(`${SERVER_URL}/bookings/${id}`, {
-          method: 'DELETE',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-      }
-      setSelectedBookings([]);
-      setDeleteConfirm({ open: false, multiple: false, bookingId: null });
-    } catch (error) {
-      console.error('Error deleting booking(s):', error);
-      alert('حدث خطأ أثناء الحذف');
-    }
-  };
-
-  // دالة إغلاق مربع حوار التأكيد
-  const closeDeleteConfirm = () => {
-    setDeleteConfirm({ open: false, multiple: false, bookingId: null });
-  };
-
-  // حساب الإحصائيات
-  const stats = getStatistics(bookings);
 
   // دالة تغيير حالة الحجز
   const handleBookingToggle = async () => {
@@ -1035,7 +855,7 @@ const AdminDashboard = () => {
       handleClose();
       const newState = !bookingEnabled;
       
-      const response = await fetch(`${SERVER_URL}${API_ENDPOINTS.settings}`, {
+      const response = await fetch(`${SERVER_URL}/settings/booking`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -1104,7 +924,7 @@ const AdminDashboard = () => {
       setTimeout(async () => {
         const updateBookingStatus = async () => {
           try {
-            const response = await fetch(`${SERVER_URL}${API_ENDPOINTS.settings}`, {
+            const response = await fetch(`${SERVER_URL}/settings/booking`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json'
@@ -1140,7 +960,7 @@ const AdminDashboard = () => {
     // إعادة تفعيل الحجز عند تغيير الحد الأقصى
     const updateBookingStatus = async () => {
       try {
-        const response = await fetch(`${SERVER_URL}${API_ENDPOINTS.settings}`, {
+        const response = await fetch(`${SERVER_URL}/settings/booking`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -1173,7 +993,7 @@ const AdminDashboard = () => {
     // تحديث الإعدادات في الخادم
     const updateSettings = async () => {
       try {
-        const response = await fetch(`${SERVER_URL}${API_ENDPOINTS.maxGuests}`, {
+        const response = await fetch(`${SERVER_URL}/settings/maxGuests`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -1192,16 +1012,8 @@ const AdminDashboard = () => {
     updateSettings();
   };
 
-  // تعديل useEffect لحساب إجمالي عدد الأشخاص
-  useEffect(() => {
-    const totalGuestsCount = bookings.reduce((sum, booking) => {
-      return sum + (parseInt(booking.guests) || 0);
-    }, 0);
-    setTotalGuests(totalGuestsCount);
-  }, [bookings]);
-
   return (
-    <PageWrapper className="admin-dashboard">
+    <PageWrapper>
       <StyledHeader scrolled={isScrolled}>
         <LogoContainer>
           <img 
@@ -1240,7 +1052,7 @@ const AdminDashboard = () => {
                 transition: 'all 0.3s ease'
               }}
             >
-              لوحة التحكم - المدير
+              لوحة التحكم
             </Typography>
           </TitleContainer>
         </LogoContainer>
@@ -1535,7 +1347,7 @@ const AdminDashboard = () => {
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <Box>
                   <Typography variant="h3" sx={{ color: '#2e7d32', fontWeight: 700 }}>
-                    {totalGuests}
+                    {calculateTotalGuests(filteredBookings)}
                   </Typography>
                   <Typography variant="body1" sx={{ color: 'text.secondary' }}>
                     عدد الأشخاص
@@ -1547,7 +1359,7 @@ const AdminDashboard = () => {
               </Box>
               <LinearProgress 
                 variant="determinate" 
-                value={Math.min((totalGuests / maxGuestsPerBooking) * 100, 100)}
+                value={Math.min(stats.todayGuests.progress, 100)} 
                 sx={{ mt: 2, height: 6, borderRadius: 3, bgcolor: 'success.lighter',
                   '& .MuiLinearProgress-bar': { borderRadius: 3, bgcolor: 'success.main' }
                 }} 
@@ -1628,7 +1440,7 @@ const AdminDashboard = () => {
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <Box>
                       <Typography variant="h3" sx={{ color: '#2e7d32', fontWeight: 700 }}>
-                        {totalGuests}
+                        {calculateTotalGuests(filteredBookings)}
                       </Typography>
                       <Typography variant="body1" sx={{ color: 'text.secondary' }}>
                         عدد الأشخاص
@@ -1640,7 +1452,7 @@ const AdminDashboard = () => {
                   </Box>
                   <LinearProgress 
                     variant="determinate" 
-                    value={Math.min((totalGuests / maxGuestsPerBooking) * 100, 100)}
+                    value={Math.min(stats.todayGuests.progress, 100)} 
                     sx={{ mt: 2, height: 6, borderRadius: 3, bgcolor: 'success.lighter',
                       '& .MuiLinearProgress-bar': { borderRadius: 3, bgcolor: 'success.main' }
                     }} 
@@ -1708,17 +1520,41 @@ const AdminDashboard = () => {
               <StyledTextField
                 fullWidth
                 size="small"
-                label="بحث بالاسم أو رقم الجوال"
+                label="الاسم أو رقم الجوال"
+                placeholder="ابحث بالاسم أو رقم الجوال..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
+                inputRef={searchInputRef}
                 InputProps={{
                   endAdornment: (
                     <InputAdornment position="end">
-                      <SearchIcon />
+                      <IconButton 
+                        onClick={() => searchInputRef.current?.focus()}
+                        edge="end"
+                        sx={{
+                          color: 'rgba(0, 0, 0, 0.54) !important', // إضافة !important لتجاوز أي أنماط أخرى
+                          transition: 'color 0.2s',
+                          '&:hover': {
+                            backgroundColor: 'rgba(38, 135, 242, 0.04)',
+                          },
+                          '& .MuiSvgIcon-root': {
+                            color: 'rgba(0, 0, 0, 0.54) !important', // تحديد لون الأيقونة بشكل مباشر
+                          }
+                        }}
+                      >
+                        <SearchIcon />
+                      </IconButton>
                     </InputAdornment>
                   )
                 }}
-                sx={{ flex: 2 }}
+                sx={{ 
+                  flex: 2,
+                  '& .MuiOutlinedInput-root.Mui-focused .MuiIconButton-root': {
+                    '& .MuiSvgIcon-root': {
+                      color: '#2687f2 !important', // تصحيح صيغة اللون بإزالة الأقواس المربعة
+                    }
+                  }
+                }}
               />
 
               <StyledDatePicker
@@ -1826,7 +1662,7 @@ const AdminDashboard = () => {
               </Stack>
 
               <Button 
-                onClick={handleResetFilters}
+                onClick={handleReset}
                 variant="contained"
                 startIcon={<RotatingIcon isrotating={isRotating.toString()} />}
                 sx={{ 
@@ -1844,7 +1680,7 @@ const AdminDashboard = () => {
               </Button>
 
               <IconButton 
-                onClick={handleResetFilters}
+                onClick={handleReset}
                 sx={{ 
                   display: { xs: 'none', sm: 'flex' },
                   bgcolor: 'primary.light',
@@ -2092,11 +1928,96 @@ const AdminDashboard = () => {
       </Dialog>
 
       {/* نافذة تأكيد تسجيل الخروج */}
-      <LogoutDialog
+      <Dialog
         open={logoutConfirm}
         onClose={() => setLogoutConfirm(false)}
-        onConfirm={confirmLogout}
-      />
+        dir="rtl"
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            boxShadow: '0 8px 32px rgba(31, 54, 92, 0.15)',
+            background: 'rgba(255, 255, 255, 0.95)',
+            backdropFilter: 'blur(10px)',
+            position: 'relative',
+            overflow: 'hidden',
+            '&::before': {
+              content: '""',
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: '4px',
+              background: 'linear-gradient(45deg, #d32f2f 30%, #ef5350 90%)'
+            }
+          }
+        }}
+      >
+        <DialogTitle sx={{ 
+          fontSize: '1.5rem',  // تعديل حجم العنوان
+          fontWeight: 700,
+          color: '#1f365c',
+          fontFamily: 'Tajawal, sans-serif',
+          pb: 1
+        }}>
+          تأكيد تسجيل الخروج
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ 
+            fontSize: '1.2rem',  // تعديل حجم النص
+            color: 'text.secondary',
+            fontFamily: 'Tajawal, sans-serif',
+            mb: 2
+          }}>
+            هل أنت متأكد من تسجيل الخروج؟
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{
+          p: 2, 
+          pt: 0,
+          justifyContent: 'center',
+          gap: 1
+        }}>
+          <Button 
+            onClick={() => setLogoutConfirm(false)}
+            variant="outlined"
+            size="small"
+            sx={{ 
+              color: 'text.secondary',
+              borderColor: 'divider',
+              fontSize: '0.9rem',
+              px: 2,
+              minWidth: '70px',
+              height: '32px',
+              '&:hover': {
+                borderColor: 'text.primary',
+                backgroundColor: 'transparent'
+              }
+            }}
+          >
+            إلغاء
+          </Button>
+          <Button 
+            onClick={confirmLogout}
+            variant="contained"
+            size="small"
+            color="error"
+            sx={{ 
+              fontSize: '0.9rem',
+              px: 2,
+              minWidth: '70px',
+              height: '32px',
+              background: 'linear-gradient(45deg, #d32f2f 30%, #ef5350 90%)',
+              boxShadow: '0 2px 4px rgba(211, 47, 47, .2)',
+              '&:hover': {
+                background: 'linear-gradient(45deg, #c62828 30%, #d32f2f 90%)',
+                boxShadow: '0 3px 6px rgba(211, 47, 47, .3)'
+              }
+            }}
+          >
+            تأكيد
+          </Button>
+        </DialogActions>
+      </Dialog>
     </PageWrapper>
   );
 };

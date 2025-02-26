@@ -15,7 +15,6 @@ import PhoneIcon from '@mui/icons-material/Phone';
 import LockIcon from '@mui/icons-material/Lock';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
-import { SERVER_URL, API_ENDPOINTS } from '../config';
 
 // تصميم الصفحة الكاملة
 const PageWrapper = styled(Box)({
@@ -109,42 +108,41 @@ const Logo = styled('img')({
   marginBottom: 24,
 });
 
+// تعديل عنوان الخادم
+const SERVER_URL = 'http://localhost:5000';
+
 const LoginPage = () => {
   const navigate = useNavigate();
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [shake, setShake] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-    setLoading(true);
-
+    setError(''); // مسح الأخطاء السابقة
+    
     try {
-      const response = await fetch(`${SERVER_URL}${API_ENDPOINTS.login}`, {
+      const response = await fetch(`${SERVER_URL}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ phone, password }),
-        credentials: 'include'
+        body: JSON.stringify({ phone, password })
       });
 
       const data = await response.json();
       
       if (!response.ok) {
-        throw new Error(data.error || 'حدث خطأ في تسجيل الدخول');
+        throw new Error(data.error || 'رقم الجوال أو كلمة المرور غير صحيحة');
       }
 
-      localStorage.setItem('isAuthenticated', 'true');
-      navigate('/admin');
+      if (data.success) {
+        localStorage.setItem('isAuthenticated', 'true');
+        navigate('/admin');
+      }
     } catch (error) {
-      setError('حدث خطأ في تسجيل الدخول');
-    } finally {
-      setLoading(false);
+      setError(error.message || 'حدث خطأ في الاتصال بالخادم');
     }
   };
 

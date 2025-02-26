@@ -3,7 +3,6 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import LoginPage from './components/LoginPage';
 import AdminDashboard from './components/AdminDashboard';
 import BookingForm from './components/BookingForm';
-import { SpeedInsights } from "@vercel/speed-insights/react";
 
 // مكون التوجيه المحمي للوحة التحكم فقط
 const ProtectedRoute = ({ children }) => {
@@ -18,31 +17,25 @@ const ProtectedRoute = ({ children }) => {
 
 function App() {
   return (
-    <>
-      <Router>
-        <Routes>
-          {/* صفحة الحجز الرئيسية - متاحة للجميع */}
-          <Route path="/" element={<BookingForm />} />
-          
-          {/* صفحة تسجيل الدخول للوحة التحكم */}
-          <Route path="/login" element={<LoginPage />} />
-          
-          {/* لوحة التحكم - محمية بتسجيل الدخول */}
-          <Route 
-            path="/admin" 
-            element={
-              <ProtectedRoute>
-                <AdminDashboard />
-              </ProtectedRoute>
-            } 
-          />
-          
-          {/* توجيه أي مسار غير معروف إلى الصفحة الرئيسية */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Router>
-      <SpeedInsights />
-    </>
+    <Router>
+      <Routes>
+        {/* صفحة الحجز الرئيسية - متاحة للجميع */}
+        <Route path="/" element={<BookingForm />} />
+        
+        {/* صفحة تسجيل الدخول للوحة التحكم */}
+        <Route path="/login" element={<LoginPage />} />
+        
+        {/* لوحة التحكم - محمية بتسجيل الدخول */}
+        <Route 
+          path="/admin" 
+          element={
+            <ProtectedRoute>
+              <AdminDashboard />
+            </ProtectedRoute>
+          } 
+        />
+      </Routes>
+    </Router>
   );
 }
 

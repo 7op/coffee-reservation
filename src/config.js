@@ -1,6 +1,4 @@
-export const SERVER_URL = process.env.NODE_ENV === 'production'
-  ? ''  // سيستخدم نفس النطاق
-  : 'http://localhost:4000';
+export const SERVER_URL = 'https://coffee-reservation-backend.onrender.com';
 
 export const API_ENDPOINTS = {
   login: '/api/auth/login',

@@ -10,8 +10,9 @@ import {
   Alert,
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
+import { collection, addDoc } from 'firebase/firestore';
+import { db } from '../firebase/config';
 import io from 'socket.io-client';
-import { SERVER_URL, API_ENDPOINTS } from '../config';
 
 // تصميم مخصص للورقة
 const StyledPaper = styled(Paper)(({ theme }) => ({
@@ -115,6 +116,8 @@ const Logo = styled('img')(({ theme }) => ({
     width: 100,
   },
 }));
+
+const SERVER_URL = 'http://localhost:5000';
 
 const StyledContainer = styled(Container)(({ theme }) => ({
   [theme.breakpoints.up('sm')]: {
@@ -225,7 +228,7 @@ const BookingForm = () => {
       return;
     }
     try {
-      const response = await fetch(`${SERVER_URL}${API_ENDPOINTS.bookings}`, {
+      const response = await fetch(`${SERVER_URL}/bookings`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
