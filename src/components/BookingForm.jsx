@@ -187,7 +187,6 @@ const BookingForm = () => {
 
     fetchSettings();
 
-    // إضافة الاستماع لتحديثات الإعدادات
     const socket = io(SERVER_URL, {
       transports: ['websocket'],
       upgrade: false
@@ -198,9 +197,9 @@ const BookingForm = () => {
         setMaxGuestsPerBooking(data.maxGuests);
         localStorage.setItem('maxGuestsPerBooking', data.maxGuests);
         
-        // إذا كان عدد الأشخاص المحدد أكبر من الحد الجديد، نقوم بتحديثه
+        // تحديث عدد الأشخاص إذا تجاوز الحد الجديد
         if (parseInt(booking.guests) > data.maxGuests) {
-          setBooking(prev => ({ ...prev, guests: data.maxGuests }));
+          setBooking(prev => ({ ...prev, guests: data.maxGuests.toString() }));
         }
       }
     });
@@ -209,7 +208,7 @@ const BookingForm = () => {
       socket.off('settingsUpdated');
       socket.disconnect();
     };
-  }, []); // إضافة booking.guests للتبعيات إذا كنت تستخدم الجزء الخاص بتحديث عدد الأشخاص
+  }, [booking.guests]); // إضافة booking.guests للتبعيات
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -302,9 +301,19 @@ const BookingForm = () => {
             )}
 
             {!isBookingEnabled && (
-              <Alert severity="warning" sx={{ mb: 2 }}>
-               عذراً ،  تم إغلاق الحجز حالياً لهذا اليوم .
-              </Alert>
+              <Box sx={{
+                p: 2,
+                borderRadius: 2,
+                bgcolor: 'rgba(1, 32, 112, 0.1)',
+                border: '1px solid rgba(1, 32, 112, 0.3)',
+                color: '#012070',
+                textAlign: 'center',
+              }}>
+                <Typography sx={{ fontSize: { xs: '0.875rem', sm: '1rem' }, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+                  <span role="img" aria-label="warning">⚠️</span>
+                  عذراً ، تم إغلاق الحجز حالياً لهذا اليوم .
+                </Typography>
+              </Box>
             )}
 
             {/* إظهار النموذج فقط إذا كان الحجز مفتوح ولم يتم الحجز بنجاح */}

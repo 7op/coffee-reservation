@@ -218,6 +218,10 @@ const timePickerCommonProps = {
         display: 'none !important',
         height: '0 !important'
       },
+      '& .muirtl-1dr372x::after': {
+        display: 'none !important',
+        height: '0 !important'
+      },
       '& .MuiPickersLayout-actionBar': {
         gridColumn: '2 !important',
         padding: '0 !important',
@@ -342,7 +346,7 @@ const getStatistics = (bookings) => {
   // تحسين حساب الوقت الأكثر حجزاً (بالساعات فقط)
   const timeCount = {};
   let maxCount = 0;
-  let mostBookedTime = '';
+  let mostBookedTime = '0';  // تغيير القيمة الافتراضية من '' إلى '0'
 
   bookings.forEach(booking => {
     if (booking.time) {
@@ -388,7 +392,7 @@ const getStatistics = (bookings) => {
     },
     totalBookings: totalBookingsObj,  // تغيير من averageBookings إلى totalBookings
     mostBookedTime: {
-      time: mostBookedTime,
+      time: mostBookedTime || '0',  // التأكد من عرض '0' إذا كان الوقت فارغاً
       count: maxCount,
       progress: progressPercentage
     }
@@ -564,10 +568,7 @@ const AdminDashboard = () => {
   });
   const audioRef = useRef(new Audio('/notification.mp3'));
   const previousBookingsLength = useRef(0);
-  const [isSoundEnabled, setIsSoundEnabled] = useState(() => {
-    const saved = localStorage.getItem('soundEnabled');
-    return saved ? JSON.parse(saved) : false;
-  });
+  const [isSoundEnabled, setIsSoundEnabled] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState({
     open: false,
     multiple: false,
@@ -580,13 +581,12 @@ const AdminDashboard = () => {
   const [logoutConfirm, setLogoutConfirm] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
-  const [maxDailyBookings, setMaxDailyBookings] = useState(() => {
-    const saved = localStorage.getItem('maxDailyBookings');
-    return saved ? parseInt(saved) : 50;  // القيمة الافتراضية 50
-  });
+  const [maxDailyBookings, setMaxDailyBookings] = useState(50);
+  const [remainingBookings, setRemainingBookings] = useState(50);
+  const [originalMaxBookings, setOriginalMaxBookings] = useState(50);
   const [maxGuestsPerBooking, setMaxGuestsPerBooking] = useState(() => {
     const saved = localStorage.getItem('maxGuestsPerBooking');
-    return saved ? parseInt(saved) : 10;  // القيمة الافتراضية 10
+    return saved ? parseInt(saved) : 1;  // تغيير القيمة الافتراضية إلى 1
   });
   // في بداية المكون AdminDashboard أضف مرجعاً للحقل
   const searchInputRef = useRef(null);
@@ -686,6 +686,62 @@ const AdminDashboard = () => {
   };
 
   useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        // جلب الحد الأقصى للحجوزات اليومية
+        const maxDailyResponse = await fetch(`${SERVER_URL}${API_ENDPOINTS.maxDailyBookings}`);
+        if (maxDailyResponse.ok) {
+          const data = await maxDailyResponse.json();
+          if (data.maxDailyBookings !== undefined) {
+            setMaxDailyBookings(data.maxDailyBookings);
+            setOriginalMaxBookings(data.maxDailyBookings); // حفظ القيمة الأصلية
+          }
+        } else {
+          console.error('Failed to fetch maxDailyBookings:', await maxDailyResponse.text());
+        }
+
+        // جلب الحد الأقصى لعدد الأشخاص
+        const maxGuestsResponse = await fetch(`${SERVER_URL}${API_ENDPOINTS.maxGuests}`);
+        if (maxGuestsResponse.ok) {
+          const data = await maxGuestsResponse.json();
+          if (data.maxGuests !== undefined) {
+            setMaxGuestsPerBooking(data.maxGuests);
+            localStorage.setItem('maxGuestsPerBooking', data.maxGuests.toString());
+          }
+        } else {
+          console.error('Failed to fetch maxGuests:', await maxGuestsResponse.text());
+        }
+      } catch (error) {
+        console.error('Error fetching settings:', error);
+      }
+    };
+
+    fetchSettings();
+
+    // الاستماع لتحديثات الإعدادات
+    const socket = io(SERVER_URL, {
+      transports: ['websocket'],
+      upgrade: false
+    });
+
+    socket.on('settingsUpdated', (data) => {
+      if (data.maxDailyBookings !== undefined) {
+        setMaxDailyBookings(data.maxDailyBookings);
+        localStorage.setItem('maxDailyBookings', data.maxDailyBookings.toString());
+      }
+      if (data.maxGuests !== undefined) {
+        setMaxGuestsPerBooking(data.maxGuests);
+        localStorage.setItem('maxGuestsPerBooking', data.maxGuests.toString());
+      }
+    });
+
+    return () => {
+      socket.off('settingsUpdated');
+      socket.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
     const fetchBookingStatus = async () => {
       try {
         const response = await fetch(`${SERVER_URL}/api/settings/booking`);
@@ -719,6 +775,132 @@ const AdminDashboard = () => {
     };
   }, []);
 
+  // تعديل useEffect لحساب عدد الحجوزات المتبقية
+  useEffect(() => {
+    const todayBookings = bookings.filter(booking => {
+      const bookingDate = new Date(booking.createdAt);
+      const today = new Date();
+      return (
+        bookingDate.getDate() === today.getDate() &&
+        bookingDate.getMonth() === today.getMonth() &&
+        bookingDate.getFullYear() === today.getFullYear()
+      );
+    });
+
+    const remaining = maxDailyBookings - todayBookings.length;
+    setRemainingBookings(remaining);
+
+    // إغلاق الحجز تلقائياً فقط عندما يصل العدد إلى الحد الأقصى
+    if (todayBookings.length >= maxDailyBookings && 
+        bookingEnabled && 
+        maxDailyBookings > 0 &&
+        todayBookings.length > 0) {  
+      
+      setTimeout(async () => {
+        try {
+          const currentTodayBookings = bookings.filter(booking => {
+            const bookingDate = new Date(booking.createdAt);
+            const today = new Date();
+            return (
+              bookingDate.getDate() === today.getDate() &&
+              bookingDate.getMonth() === today.getMonth() &&
+              bookingDate.getFullYear() === today.getFullYear()
+            );
+          });
+
+          if (currentTodayBookings.length >= maxDailyBookings) {
+            const response = await fetch(`${SERVER_URL}/api/settings/booking`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ enabled: false })
+            });
+
+            if (!response.ok) {
+              throw new Error('فشل في تحديث الإعدادات');
+            }
+
+            const data = await response.json();
+            if (data.success) {
+              setBookingEnabled(false);
+              alert('تم إيقاف الحجز تلقائياً لاكتمال العدد المسموح به');
+            }
+          }
+        } catch (error) {
+          console.error('Error updating booking status:', error);
+        }
+      }, 10000);
+    }
+  }, [bookings, maxDailyBookings, bookingEnabled]);
+
+  useEffect(() => {
+    // جلب حالة التنبيهات من السيرفر عند تحميل الصفحة
+    const fetchNotificationSettings = async () => {
+      try {
+        const response = await fetch(`${SERVER_URL}/api/settings/notifications`);
+        if (response.ok) {
+          const data = await response.json();
+          setIsSoundEnabled(data.enabled);
+        }
+      } catch (error) {
+        console.error('Error fetching notification settings:', error);
+      }
+    };
+
+    fetchNotificationSettings();
+
+    // الاستماع لتحديثات الإعدادات
+    const socket = io(SERVER_URL, {
+      transports: ['websocket'],
+      upgrade: false
+    });
+
+    socket.on('settingsUpdated', (data) => {
+      if (data.notificationsEnabled !== undefined) {
+        setIsSoundEnabled(data.notificationsEnabled);
+      }
+    });
+
+    return () => {
+      socket.off('settingsUpdated');
+      socket.disconnect();
+    };
+  }, []);
+
+  // تعديل دالة تبديل الصوت
+  const toggleSound = async () => {
+    try {
+      const newState = !isSoundEnabled;
+      
+      const response = await fetch(`${SERVER_URL}/api/settings/notifications`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ enabled: newState })
+      });
+
+      if (response.ok) {
+        setIsSoundEnabled(newState);
+        
+        if (newState) {
+          try {
+            audioRef.current.currentTime = 0;
+            await audioRef.current.play();
+          } catch (error) {
+            console.error('Error playing test sound:', error);
+          }
+        }
+      } else {
+        throw new Error('فشل في تحديث إعدادات التنبيهات');
+      }
+    } catch (error) {
+      console.error('Error updating notification settings:', error);
+      alert('حدث خطأ أثناء تحديث إعدادات التنبيهات');
+    }
+  };
+
   const handleChangePage = (event, newPage) => {
     setPage(newPage);
   };
@@ -740,32 +922,6 @@ const AdminDashboard = () => {
         setIsRotating(false);
       }, 600); // نفس مدة الأنيميشن
     }
-  };
-
-  // تحديث دالة تبديل الصوت
-  const toggleSound = async () => {
-    const newState = !isSoundEnabled;
-    setIsSoundEnabled(newState);
-    localStorage.setItem('soundEnabled', JSON.stringify(newState));
-    
-    if (newState) {
-      try {
-        audioRef.current.currentTime = 0;
-        await audioRef.current.play();
-      } catch (error) {
-        console.error('Error playing test sound:', error);
-      }
-    }
-  };
-
-  // دالة فتح مربع حوار التأكيد
-  const openDeleteConfirm = (bookingId) => {
-    setDeleteConfirm({ open: true, multiple: false, bookingId });
-  };
-
-  // دالة إغلاق مربع حوار التأكيد
-  const closeDeleteConfirm = () => {
-    setDeleteConfirm({ open: false, multiple: false, bookingId: null });
   };
 
   // دالة الحذف المحسنة
@@ -848,17 +1004,28 @@ const AdminDashboard = () => {
   };
 
   // دالة تغيير حالة الحجز
-  const handleBookingToggle = async () => {
+  const handleBookingToggle = () => {
+    const newState = !bookingEnabled;
+    setBookingEnabled(newState);
+  };
+
+  // تعديل دالة حفظ الإعدادات
+  const handleSaveSettings = async () => {
+    // التحقق من القيم
+    if (bookingEnabled) {
+      if (maxDailyBookings < 1 || maxGuestsPerBooking < 1) {
+        alert('يجب تحديد قيمة 1 على الأقل للحد الأقصى للحجوزات وعدد الأشخاص، أو تعطيل الحجز');
+        return;
+      }
+    }
+
     try {
-      handleClose();
-      const newState = !bookingEnabled;
-      
       const response = await fetch(`${SERVER_URL}/api/settings/booking`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ enabled: newState })
+        body: JSON.stringify({ enabled: bookingEnabled })
       });
 
       if (!response.ok) {
@@ -867,8 +1034,8 @@ const AdminDashboard = () => {
 
       const data = await response.json();
       if (data.success) {
-        setBookingEnabled(newState);
-        alert(newState ? 'تم فتح الحجز بنجاح' : 'تم إغلاق الحجز بنجاح');
+        alert(bookingEnabled ? 'تم فتح الحجز بنجاح' : 'تم إغلاق الحجز بنجاح');
+        handleClose();
       }
     } catch (error) {
       console.error('Error updating booking status:', error);
@@ -905,109 +1072,80 @@ const AdminDashboard = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // تعديل useEffect لمراقبة عدد الحجوزات اليومية
-  useEffect(() => {
-    const todayBookings = bookings.filter(booking => {
-      const bookingDate = new Date(booking.createdAt);
-      const today = new Date();
-      return bookingDate.toDateString() === today.toDateString();
-    });
-
-    // إيقاف الحجز تلقائياً فقط إذا كان عدد الحجوزات اليوم يساوي أو أكبر من الحد الأقصى
-    if (todayBookings.length > 0 && 
-        todayBookings.length >= maxDailyBookings && 
-        bookingEnabled) {
-      
-      // تأخير إغلاق الحجز لمدة 11 ثواني (10 ثواني لرسالة النجاح + 1 ثانية إضافية)
-      setTimeout(async () => {
-        const updateBookingStatus = async () => {
-          try {
-            const response = await fetch(`${SERVER_URL}/api/settings/booking`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({ enabled: false })
-            });
-
-            if (!response.ok) {
-              throw new Error('فشل في تحديث الإعدادات');
-            }
-
-            const data = await response.json();
-            if (data.success) {
-              setBookingEnabled(false);
-              alert('تم إيقاف الحجز تلقائياً لاكتمال العدد المسموح به');
-            }
-          } catch (error) {
-            console.error('Error updating booking status:', error);
-          }
-        };
-
-        updateBookingStatus();
-      }, 10000); // تأخير 11 ثواني
-    }
-  }, [bookings]);
-
-  // دالة لتحديث الحد الأقصى
-  const handleMaxBookingsChange = (event) => {
-    const value = parseInt(event.target.value);
-    setMaxDailyBookings(value);
-    localStorage.setItem('maxDailyBookings', value);
+  // تعديل دالة تغيير الحد الأقصى للحجوزات
+  const handleMaxBookingsChange = async (event) => {
+    const value = event.target.value.replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+    const newValue = parseInt(value);
     
-    // إعادة تفعيل الحجز عند تغيير الحد الأقصى
-    const updateBookingStatus = async () => {
-      try {
-        const response = await fetch(`${SERVER_URL}/api/settings/booking`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ enabled: true })
-        });
+    if (isNaN(newValue) || newValue < 1) {
+      alert('الرجاء إدخال رقم صحيح أكبر من 0');
+      return;
+    }
 
-        if (!response.ok) {
-          throw new Error('فشل في تحديث الإعدادات');
-        }
+    try {
+      const response = await fetch(`${SERVER_URL}/api/settings/maxDailyBookings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ maxDailyBookings: newValue })
+      });
 
+      if (response.ok) {
         const data = await response.json();
         if (data.success) {
-          setBookingEnabled(true);
+          setMaxDailyBookings(newValue);
+          setOriginalMaxBookings(newValue);
+          setRemainingBookings(newValue); // تحديث عدد الحجوزات المتبقية عند تغيير الحد الأقصى
+        } else {
+          throw new Error(data.error || 'فشل في تحديث الإعدادات');
         }
-      } catch (error) {
-        console.error('Error updating booking status:', error);
+      } else {
+        const errorText = await response.text();
+        throw new Error(errorText || 'فشل في تحديث الإعدادات');
       }
-    };
-
-    updateBookingStatus();
+    } catch (error) {
+      console.error('Error updating maxDailyBookings:', error);
+      alert('حدث خطأ أثناء حفظ الإعدادات');
+    }
   };
 
-  // دالة لتحديث الحد الأقصى لعدد الأشخاص
-  const handleMaxGuestsChange = (event) => {
-    const value = parseInt(event.target.value);
-    setMaxGuestsPerBooking(value);
-    localStorage.setItem('maxGuestsPerBooking', value);
-    
-    // تحديث الإعدادات في الخادم
-    const updateSettings = async () => {
+  // تعديل دالة تحديث الحد الأقصى لعدد الأشخاص
+  const handleMaxGuestsChange = async (event) => {
+    const value = event.target.value.replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+    if (value === '' || parseInt(value) >= 0) {
+      const newValue = value === '' ? 1 : parseInt(value);
+      setMaxGuestsPerBooking(newValue);
+      localStorage.setItem('maxGuestsPerBooking', newValue.toString());
+
+      // حفظ القيمة على السيرفر
       try {
         const response = await fetch(`${SERVER_URL}/api/settings/maxGuests`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ maxGuests: value })
+          body: JSON.stringify({ maxGuests: newValue })
         });
 
         if (!response.ok) {
           throw new Error('فشل في تحديث الإعدادات');
         }
       } catch (error) {
-        console.error('Error updating max guests:', error);
+        console.error('Error updating maxGuests:', error);
+        alert('حدث خطأ أثناء حفظ الإعدادات');
       }
-    };
+    }
+  };
 
-    updateSettings();
+  // دالة فتح مربع حوار التأكيد
+  const openDeleteConfirm = (bookingId) => {
+    setDeleteConfirm({ open: true, multiple: false, bookingId });
+  };
+
+  // دالة إغلاق مربع حوار التأكيد
+  const closeDeleteConfirm = () => {
+    setDeleteConfirm({ open: false, multiple: false, bookingId: null });
   };
 
   return (
@@ -1167,75 +1305,16 @@ const AdminDashboard = () => {
           </Typography>
         </Box>
 
-        {/* إضافة إعداد الحد الأقصى للحجوزات */}
-        <Box sx={{ 
-          display: 'flex', 
-          flexDirection: 'column',
-          gap: 1,
-          mb: 2,
-          p: 1.5,
-          borderRadius: 2,
-          bgcolor: 'rgba(38, 135, 242, 0.1)',
-          border: '1px solid rgba(38, 135, 242, 0.2)'
-        }}>
-          <Typography sx={{ color: 'text.secondary', mb: 1 }}>
-            الحد الأقصى للحجوزات اليومية
-          </Typography>
-          <TextField
-            type="number"
-            value={maxDailyBookings}
-            onChange={handleMaxBookingsChange}
-            size="small"
-            InputProps={{
-              inputProps: { min: 1 },
-              endAdornment: (
-                <InputAdornment position="end">
-                  <Typography sx={{ color: 'text.secondary' }}>حجز</Typography>
-                </InputAdornment>
-              )
-            }}
-          />
-        </Box>
-
-        {/* إضافة إعداد الحد الأقصى لعدد الأشخاص */}
-        <Box sx={{ 
-          display: 'flex', 
-          flexDirection: 'column',
-          gap: 1,
-          mb: 2,
-          p: 1.5,
-          borderRadius: 2,
-          bgcolor: 'rgba(46, 125, 50, 0.1)',
-          border: '1px solid rgba(46, 125, 50, 0.2)'
-        }}>
-          <Typography sx={{ color: 'text.secondary', mb: 1 }}>
-            الحد الأقصى لعدد الأشخاص في الحجز الواحد
-          </Typography>
-          <TextField
-            type="number"
-            value={maxGuestsPerBooking}
-            onChange={handleMaxGuestsChange}
-            size="small"
-            InputProps={{
-              inputProps: { min: 1 },
-              endAdornment: (
-                <InputAdornment position="end">
-                  <Typography sx={{ color: 'text.secondary' }}>شخص</Typography>
-                </InputAdornment>
-              )
-            }}
-          />
-          <Typography variant="caption" sx={{ color: 'text.secondary', mt: 0.5 }}>
-            سيتم تطبيق هذا الحد على جميع الحجوزات الجديدة
-          </Typography>
-        </Box>
-
         {/* إعدادات السماح بالحجز */}
         <Box sx={{ 
           display: 'flex', 
           alignItems: 'center',
           justifyContent: 'space-between',
-          mb: 1
+          mb: 2,
+          p: 1.5,
+          borderRadius: 2,
+          bgcolor: 'rgba(38, 135, 242, 0.1)',
+          border: '1px solid rgba(38, 135, 242, 0.2)'
         }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <BlockIcon color={bookingEnabled ? 'disabled' : 'error'} />
@@ -1255,6 +1334,92 @@ const AdminDashboard = () => {
           />
         </Box>
 
+        {bookingEnabled && (
+          <>
+            {/* إضافة إعداد الحد الأقصى للحجوزات */}
+            <Box sx={{ 
+              display: 'flex', 
+              flexDirection: 'column',
+              gap: 1,
+              mb: 2,
+              p: 1.5,
+              borderRadius: 2,
+              bgcolor: 'rgba(38, 135, 242, 0.1)',
+              border: '1px solid rgba(38, 135, 242, 0.2)'
+            }}>
+              <Typography sx={{ color: 'text.secondary', mb: 1 }}>
+                الحد الأقصى للحجوزات اليومية
+              </Typography>
+              <TextField
+                type="text"
+                inputMode="numeric"
+                value={maxDailyBookings}
+                onChange={handleMaxBookingsChange}
+                size="small"
+                InputProps={{
+                  inputProps: { 
+                    min: 0,
+                    pattern: '[0-9]*',
+                    style: { direction: 'rtl' }
+                  },
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <Typography sx={{ color: 'text.secondary' }}>حجز</Typography>
+                    </InputAdornment>
+                  )
+                }}
+              />
+              {remainingBookings < maxDailyBookings && (
+                <Typography variant="caption" sx={{ 
+                  color: remainingBookings === 0 ? 'error.main' : 'text.secondary',
+                  mt: 0.5,
+                  fontWeight: remainingBookings === 0 ? 700 : 400
+                }}>
+                  متبقي {remainingBookings} حجز من أصل {maxDailyBookings} حجز
+                </Typography>
+              )}
+            </Box>
+
+            {/* إضافة إعداد الحد الأقصى لعدد الأشخاص */}
+            <Box sx={{ 
+              display: 'flex', 
+              flexDirection: 'column',
+              gap: 1,
+              mb: 2,
+              p: 1.5,
+              borderRadius: 2,
+              bgcolor: 'rgba(46, 125, 50, 0.1)',
+              border: '1px solid rgba(46, 125, 50, 0.2)'
+            }}>
+              <Typography sx={{ color: 'text.secondary', mb: 1 }}>
+                الحد الأقصى لعدد الأشخاص في الحجز الواحد
+              </Typography>
+              <TextField
+                type="text"
+                inputMode="numeric"
+                value={maxGuestsPerBooking}
+                onChange={handleMaxGuestsChange}
+                size="small"
+                InputProps={{
+                  inputProps: { 
+                    min: 0,
+                    pattern: '[0-9]*',
+                    style: { direction: 'rtl' }
+                  },
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <Typography sx={{ color: 'text.secondary' }}>شخص</Typography>
+                    </InputAdornment>
+                  )
+                }}
+              />
+              <Typography variant="caption" sx={{ color: 'text.secondary', mt: 0.5 }}>
+                سيتم تطبيق هذا الحد على جميع الحجوزات الجديدة
+              </Typography>
+            </Box>
+          </>
+        )}
+
         <DialogActions sx={{ 
           p: 0, 
           mt: 2,
@@ -1262,12 +1427,12 @@ const AdminDashboard = () => {
           justifyContent: 'center'
         }}>
           <Button 
-            onClick={handleClose} 
+            onClick={handleSaveSettings} 
             fullWidth
             variant="contained"
             sx={{ 
               color: 'white',
-              bgcolor: 'success.main',  // تغيير اللون إلى أخضر
+              bgcolor: 'success.main',
               '&:hover': {
                 bgcolor: 'success.dark',
               },
@@ -1291,7 +1456,7 @@ const AdminDashboard = () => {
           <Box sx={{ mx: -2 }}>
             <Swiper
               modules={[Pagination]}
-              pagination={{ clickable: true }}
+            
               spaceBetween={16}
               slidesPerView={1}
               breakpoints={{
@@ -1312,7 +1477,7 @@ const AdminDashboard = () => {
                 },
               }}
               style={{ 
-                padding: '20px 16px 20px',
+                padding: '0px 16px 0px',
                 width: '100%'
               }}
             >

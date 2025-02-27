@@ -12,24 +12,41 @@ const __dirname = dirname(__filename);
 
 dotenv.config();
 
+// إضافة رسائل تسجيل للتحقق من متغيرات البيئة
+console.log('تم تحميل متغيرات البيئة:');
+console.log('MONGODB_URI:', process.env.MONGODB_URI ? 'موجود' : 'غير موجود');
+console.log('PORT:', process.env.PORT);
+
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: ["http://localhost:5173", "https://6lb.online"],
+    origin: [
+      "http://localhost:5173",
+      "https://6lb.online",
+      "http://localhost:3000",
+      "http://localhost:5000",
+      process.env.FRONTEND_URL || "https://6lb.online"
+    ],
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true
   }
 });
 
-const port = process.env.PORT || 4000;
+const port = process.env.PORT || 5000;
 
 app.use((req, res, next) => {
   next();
 });
 
 app.use(cors({
-  origin: ["http://localhost:5173", "https://6lb.online"],
+  origin: [
+    "http://localhost:5173",
+    "https://6lb.online",
+    "http://localhost:3000",
+    "http://localhost:5000",
+    process.env.FRONTEND_URL || "https://6lb.online"
+  ],
   methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true
 }));
@@ -79,13 +96,45 @@ app.post('/api/settings/booking', async (req, res) => {
   }
 });
 
+// إضافة دالة للتحقق من عدد الحجوزات اليومية
+async function getTodayBookingsCount() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  return await bookingsCollection.countDocuments({
+    createdAt: {
+      $gte: today,
+      $lt: tomorrow
+    }
+  });
+}
+
 // إضافة حجز جديد
 app.post('/api/bookings', async (req, res) => {
   try {
+    await ensureDbConnected();
+    
     // التحقق من حالة الحجز
     const settings = await settingsCollection.findOne({ type: 'booking' });
     if (!settings?.enabled) {
       return res.status(403).json({ error: 'الحجز مغلق حالياً' });
+    }
+
+    // التحقق من عدد الحجوزات اليومية
+    const maxSettings = await settingsCollection.findOne({ type: 'maxDailyBookings' });
+    const maxDailyBookings = maxSettings?.value || 50;
+    const todayBookings = await getTodayBookingsCount();
+
+    if (todayBookings >= maxDailyBookings) {
+      // تحديث حالة الحجز لإغلاقه
+      await settingsCollection.updateOne(
+        { type: 'booking' },
+        { $set: { enabled: false } }
+      );
+      io.emit('settingsUpdated', { bookingEnabled: false });
+      return res.status(403).json({ error: 'تم إيقاف الحجز تلقائياً لاكتمال العدد المسموح به' });
     }
 
     console.log('Received booking request:', req.body);
@@ -94,10 +143,32 @@ app.post('/api/bookings', async (req, res) => {
     booking.status = 'pending';
     const result = await bookingsCollection.insertOne(booking);
     
-    io.emit('bookingUpdated');
+    // تحديث وإرسال العبارة الجديدة
+    const remainingBookings = maxDailyBookings - (todayBookings + 1);
+    const bookingStatus = `متبقي ${remainingBookings} حجز من أصل ${maxDailyBookings} حجز`;
     
-    res.json(result);
+    // تحديث العبارة في قاعدة البيانات
+    await settingsCollection.updateOne(
+      { type: 'maxDailyBookings' },
+      { 
+        $set: { 
+          remainingBookings,
+          bookingStatus
+        }
+      }
+    );
+
+    // إرسال التحديث لجميع العملاء
+    io.emit('bookingStatusUpdated', {
+      maxDailyBookings,
+      todayBookings: todayBookings + 1,
+      remainingBookings,
+      bookingStatus
+    });
+    
+    res.json({ ...result, remainingBookings, bookingStatus });
   } catch (error) {
+    console.error('Error in booking:', error);
     res.status(500).json({ error: 'Failed to save booking' });
   }
 });
@@ -197,14 +268,27 @@ app.get('/api/settings', async (req, res) => {
     const cursor = settingsCollection.find({});
     const settings = await cursor.toArray();
     
+    // إضافة عدد الحجوزات اليومية
+    const todayBookings = await getTodayBookingsCount();
+    const maxDailySettings = settings.find(s => s.type === 'maxDailyBookings');
+    const maxDailyBookings = maxDailySettings?.value || 50;
+    
     // تحويل مصفوفة الإعدادات إلى كائن واحد
     const settingsObj = settings.reduce((obj, setting) => {
       obj[setting.type] = setting;
       return obj;
     }, {});
     
+    // إضافة معلومات إضافية
+    settingsObj.currentStats = {
+      todayBookings,
+      remainingBookings: maxDailyBookings - todayBookings,
+      maxDailyBookings
+    };
+    
     res.json(settingsObj);
   } catch (error) {
+    console.error('Error fetching settings:', error);
     res.status(500).json({ error: 'فشل في جلب الإعدادات' });
   }
 });
@@ -232,7 +316,6 @@ app.post('/api/settings/maxGuests', async (req, res) => {
     );
     
     if (result.acknowledged) {
-      // إرسال إشعار للعملاء
       io.emit('settingsUpdated', { maxGuests: parseInt(maxGuests) });
       res.json({ success: true });
     } else {
@@ -240,6 +323,185 @@ app.post('/api/settings/maxGuests', async (req, res) => {
     }
   } catch (error) {
     res.status(500).json({ error: 'فشل في تحديث الإعدادات' });
+  }
+});
+
+// نقطة نهاية لضبط وإرجاع الحد الأقصى للحجوزات اليومية
+app.get('/api/settings/maxDailyBookings', async (req, res) => {
+  try {
+    await ensureDbConnected();
+    const setting = await settingsCollection.findOne({ type: 'maxDailyBookings' });
+    const value = setting?.value || 50;
+    const todayBookings = await getTodayBookingsCount();
+    
+    // التأكد من أن القيمة رقم صحيح
+    const maxDailyBookings = parseInt(value);
+    if (isNaN(maxDailyBookings) || maxDailyBookings < 1) {
+      // إذا كانت القيمة غير صالحة، نعيد القيمة الافتراضية
+      await settingsCollection.updateOne(
+        { type: 'maxDailyBookings' },
+        { 
+          $set: { 
+            value: 50,
+            todayBookings,
+            remainingBookings: 50 - todayBookings,
+            bookingStatus: `متبقي ${50 - todayBookings} حجز من أصل 50 حجز`
+          }
+        },
+        { upsert: true }
+      );
+      
+      // إرسال التحديث لجميع العملاء
+      io.emit('bookingStatusUpdated', {
+        maxDailyBookings: 50,
+        todayBookings,
+        remainingBookings: 50 - todayBookings,
+        bookingStatus: `متبقي ${50 - todayBookings} حجز من أصل 50 حجز`
+      });
+
+      res.json({ 
+        maxDailyBookings: 50, 
+        todayBookings,
+        remainingBookings: 50 - todayBookings,
+        bookingText: 'حجز',
+        bookingStatus: `متبقي ${50 - todayBookings} حجز من أصل 50 حجز`
+      });
+    } else {
+      const remainingBookings = maxDailyBookings - todayBookings;
+      const bookingStatus = `متبقي ${remainingBookings} حجز من أصل ${maxDailyBookings} حجز`;
+
+      // تحديث القيم في قاعدة البيانات
+      await settingsCollection.updateOne(
+        { type: 'maxDailyBookings' },
+        { 
+          $set: { 
+            value: maxDailyBookings,
+            todayBookings,
+            remainingBookings,
+            bookingStatus
+          }
+        }
+      );
+
+      // إرسال التحديث لجميع العملاء
+      io.emit('bookingStatusUpdated', {
+        maxDailyBookings,
+        todayBookings,
+        remainingBookings,
+        bookingStatus
+      });
+
+      res.json({ 
+        maxDailyBookings,
+        todayBookings,
+        remainingBookings,
+        bookingText: 'حجز',
+        bookingStatus
+      });
+    }
+  } catch (error) {
+    console.error('Error fetching maxDailyBookings:', error);
+    res.status(500).json({ error: 'فشل في جلب الإعدادات' });
+  }
+});
+
+app.post('/api/settings/maxDailyBookings', async (req, res) => {
+  try {
+    await ensureDbConnected();
+    const { maxDailyBookings } = req.body;
+    const todayBookings = await getTodayBookingsCount();
+    
+    // التحقق من صحة القيمة
+    const value = parseInt(maxDailyBookings);
+    if (isNaN(value) || value < 1) {
+      return res.status(400).json({ error: 'يجب إدخال رقم صحيح أكبر من 0' });
+    }
+
+    const remainingBookings = value - todayBookings;
+    const bookingStatus = `متبقي ${remainingBookings} حجز من أصل ${value} حجز`;
+
+    const result = await settingsCollection.updateOne(
+      { type: 'maxDailyBookings' },
+      { 
+        $set: { 
+          type: 'maxDailyBookings',
+          value: value,
+          todayBookings,
+          remainingBookings,
+          bookingStatus,
+          updatedAt: new Date()
+        }
+      },
+      { upsert: true }
+    );
+    
+    if (result.acknowledged) {
+      // إرسال التحديث لجميع العملاء المتصلين
+      io.emit('bookingStatusUpdated', { 
+        maxDailyBookings: value, 
+        todayBookings,
+        remainingBookings,
+        bookingStatus
+      });
+      
+      res.json({ 
+        success: true,
+        maxDailyBookings: value,
+        todayBookings,
+        remainingBookings,
+        bookingText: 'حجز',
+        bookingStatus
+      });
+    } else {
+      throw new Error('فشل في تحديث الإعدادات');
+    }
+  } catch (error) {
+    console.error('Error updating maxDailyBookings:', error);
+    res.status(500).json({ error: 'فشل في تحديث الإعدادات' });
+  }
+});
+
+// نقطة نهاية لجلب إعدادات التنبيهات
+app.get('/api/settings/notifications', async (req, res) => {
+  try {
+    await ensureDbConnected();
+    const setting = await settingsCollection.findOne({ type: 'notifications' });
+    console.log('نتيجة البحث عن إعدادات التنبيهات:', setting);
+    res.json({ enabled: setting?.enabled ?? false });
+  } catch (error) {
+    console.error('خطأ في جلب إعدادات التنبيهات:', error);
+    res.status(500).json({ error: 'فشل في جلب إعدادات التنبيهات' });
+  }
+});
+
+// نقطة نهاية لتحديث إعدادات التنبيهات
+app.post('/api/settings/notifications', async (req, res) => {
+  try {
+    await ensureDbConnected();
+    const { enabled } = req.body;
+    console.log('تحديث إعدادات التنبيهات:', { enabled });
+
+    const result = await settingsCollection.updateOne(
+      { type: 'notifications' },
+      { 
+        $set: { 
+          type: 'notifications',
+          enabled: enabled,
+          updatedAt: new Date()
+        }
+      },
+      { upsert: true }
+    );
+
+    if (result.acknowledged) {
+      io.emit('settingsUpdated', { notificationsEnabled: enabled });
+      res.json({ success: true });
+    } else {
+      throw new Error('فشل في تحديث إعدادات التنبيهات');
+    }
+  } catch (error) {
+    console.error('خطأ في تحديث إعدادات التنبيهات:', error);
+    res.status(500).json({ error: 'فشل في تحديث إعدادات التنبيهات' });
   }
 });
 
@@ -257,19 +519,33 @@ app.get('/api/debug/users', async (req, res) => {
 });
 
 // الاتصال بقاعدة البيانات
-const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/coffee-reservation';
-const client = new MongoClient(uri);
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://your_username:your_password@your_cluster.mongodb.net/coffee-reservation';
+
+console.log('محاولة الاتصال بقاعدة البيانات على:', MONGODB_URI);
+
+const client = new MongoClient(MONGODB_URI, {
+  serverSelectionTimeoutMS: 5000,
+  connectTimeoutMS: 10000,
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+});
 
 // دالة للتأكد من الاتصال بقاعدة البيانات
 async function ensureDbConnected() {
   if (!database) {
     try {
+      console.log('محاولة الاتصال بقاعدة البيانات...');
       await client.connect();
+      console.log('تم الاتصال بقاعدة البيانات بنجاح');
+      
       database = client.db('coffee-reservation');
       bookingsCollection = database.collection('bookings');
       settingsCollection = database.collection('settings');
       usersCollection = database.collection('users');
+      
+      console.log('تم تهيئة المجموعات بنجاح');
     } catch (error) {
+      console.error('خطأ في الاتصال بقاعدة البيانات:', error);
       throw new Error('Database connection failed');
     }
   }
@@ -281,8 +557,14 @@ async function startServer() {
   try {
     await ensureDbConnected();
     httpServer.listen(port, () => {
+      console.log(`Server is running on port ${port}`);
+      console.log('تم تشغيل الخادم بنجاح');
+      console.log('النقاط النهائية المتاحة:');
+      console.log('- GET  /api/settings/notifications');
+      console.log('- POST /api/settings/notifications');
     });
   } catch (error) {
+    console.error('خطأ في بدء الخادم:', error);
     process.exit(1);
   }
 }
