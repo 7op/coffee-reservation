@@ -33,7 +33,10 @@ import {
   ListItemText,
   Switch,
   Divider,
-  Checkbox
+  Checkbox,
+  CircularProgress,
+  Backdrop,
+  Grid
 } from '@mui/material';
 import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -587,6 +590,7 @@ const AdminDashboard = () => {
   });
   // في بداية المكون AdminDashboard أضف مرجعاً للحقل
   const searchInputRef = useRef(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     audioRef.current = new Audio('/notification.mp3');
@@ -754,6 +758,62 @@ const AdminDashboard = () => {
     }
   };
 
+  // دالة فتح مربع حوار التأكيد
+  const openDeleteConfirm = (bookingId) => {
+    setDeleteConfirm({ open: true, multiple: false, bookingId });
+  };
+
+  // دالة إغلاق مربع حوار التأكيد
+  const closeDeleteConfirm = () => {
+    setDeleteConfirm({ open: false, multiple: false, bookingId: null });
+  };
+
+  // دالة الحذف المحسنة
+  const handleDeleteSelected = () => {
+    if (selectedBookings.length === 0) return;
+    
+    setDeleteConfirm({
+      open: true,
+      multiple: true,
+      bookingId: null
+    });
+  };
+
+  const handleDelete = async () => {
+    setIsDeleting(true); // بدء التحميل قبل إغلاق مربع الحوار
+    closeDeleteConfirm(); // إغلاق مربع الحوار مباشرة
+
+    try {
+      if (deleteConfirm.multiple) {
+        // حذف متعدد
+        const deletePromises = selectedBookings.map(id => 
+          fetch(`${SERVER_URL}/api/bookings/${id}`, {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          })
+        );
+        
+        await Promise.all(deletePromises); // انتظار اكتمال جميع عمليات الحذف
+        setSelectedBookings([]);
+      } else {
+        // حذف واحد
+        await fetch(`${SERVER_URL}/api/bookings/${deleteConfirm.bookingId}`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        setSelectedBookings(prev => prev.filter(id => id !== deleteConfirm.bookingId));
+      }
+    } catch (error) {
+      console.error('Error deleting booking:', error);
+    } finally {
+      setIsDeleting(false); // إنهاء التحميل
+    }
+  };
+
   // دالة تحديد/إلغاء تحديد كل الحجوزات
   const handleSelectAll = (event) => {
     if (event.target.checked) {
@@ -772,57 +832,6 @@ const AdminDashboard = () => {
         return [...prev, bookingId];
       }
     });
-  };
-
-  // دالة حذف الحجوزات المحددة
-  const handleDeleteSelected = () => {
-    if (selectedBookings.length === 0) return;
-    
-    setDeleteConfirm({
-      open: true,
-      multiple: true,
-      bookingId: null
-    });
-  };
-
-  // تعديل دالة الحذف لتدعم الحذف المتعدد
-  const handleDeleteBooking = async (bookingId) => {
-    try {
-      if (deleteConfirm.multiple) {
-        // حذف متعدد
-        for (const id of selectedBookings) {
-          await fetch(`${SERVER_URL}/bookings/${id}`, {
-            method: 'DELETE',
-            headers: {
-              'Content-Type': 'application/json'
-            }
-          });
-        }
-        setSelectedBookings([]);
-      } else {
-        // حذف واحد
-        await fetch(`${SERVER_URL}/bookings/${bookingId}`, {
-          method: 'DELETE',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-      }
-      setDeleteConfirm({ open: false, multiple: false, bookingId: null });
-    } catch (error) {
-      console.error('Error deleting booking(s):', error);
-      alert('حدث خطأ أثناء الحذف');
-    }
-  };
-
-  // دالة فتح مربع حوار التأكيد
-  const openDeleteConfirm = (bookingId) => {
-    setDeleteConfirm({ open: true, multiple: false, bookingId });
-  };
-
-  // دالة إغلاق مربع حوار التأكيد
-  const closeDeleteConfirm = () => {
-    setDeleteConfirm({ open: false, multiple: false, bookingId: null });
   };
 
   // حساب الإحصائيات
@@ -1041,7 +1050,7 @@ const AdminDashboard = () => {
                 transition: 'all 0.3s ease'
               }}
             >
-              لوحة التحكم
+              لوحة التحكم - المدير
             </Typography>
           </TitleContainer>
         </LogoContainer>
@@ -1272,126 +1281,42 @@ const AdminDashboard = () => {
         </DialogActions>
       </Dialog>
 
-      <Stack spacing={5}>
+      <Stack spacing={5} sx={{
+        '& > :not(style) ~ :not(style)': {
+          marginTop: '25px !important'
+        }
+      }}>
         {/* مربعات الإحصائيات */}
         <Box sx={{ display: 'block' }}>
-          {/* عرض عادي للشاشات الكبيرة */}
-          <Stack 
-            direction="row" 
-            spacing={3}
-            sx={{ 
-              display: { xs: 'none', md: 'flex' }
-            }}
-          >
-            {/* حجز اليوم */}
-            <StyledStatBox index={0}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Box>
-                  <Typography variant="h3" sx={{ color: '#1f365c', fontWeight: 700 }}>
-                    {stats.todayBookings.count}
-                  </Typography>
-                  <Typography variant="body1" sx={{ color: 'text.secondary' }}>
-                    حجز اليوم
-                  </Typography>
-                </Box>
-                <Avatar sx={{ bgcolor: 'primary.light', p: 1 }}>
-                  <EventIcon />
-                </Avatar>
-              </Box>
-              <LinearProgress 
-                variant="determinate" 
-                value={Math.min(stats.todayBookings.progress, 100)} 
-                sx={{ mt: 2, height: 6, borderRadius: 3, bgcolor: 'primary.lighter',
-                  '& .MuiLinearProgress-bar': { borderRadius: 3, bgcolor: 'primary.main' }
-                }} 
-              />
-            </StyledStatBox>
-
-            {/* عدد الحجوزات الكلي */}
-            <StyledStatBox index={1}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Box>
-                  <Typography variant="h3" sx={{ color: '#ed6c02', fontWeight: 700 }}>
-                    {filteredBookings.length}
-                  </Typography>
-                  <Typography variant="body1" sx={{ color: 'text.secondary' }}>
-                    عدد الحجوزات
-                  </Typography>
-                </Box>
-                <Avatar sx={{ bgcolor: 'warning.light', p: 1 }}>
-                  <ShowChartIcon />
-                </Avatar>
-              </Box>
-              <LinearProgress 
-                variant="determinate" 
-                value={Math.min((filteredBookings.length / 200) * 100, 100)}
-                sx={{ mt: 2, height: 6, borderRadius: 3, bgcolor: 'warning.lighter',
-                  '& .MuiLinearProgress-bar': { borderRadius: 3, bgcolor: 'warning.main' }
-                }} 
-              />
-            </StyledStatBox>
-
-            {/* عدد الأشخاص */}
-            <StyledStatBox index={2}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Box>
-                  <Typography variant="h3" sx={{ color: '#2e7d32', fontWeight: 700 }}>
-                    {calculateTotalGuests(filteredBookings)}
-                  </Typography>
-                  <Typography variant="body1" sx={{ color: 'text.secondary' }}>
-                    عدد الأشخاص
-                  </Typography>
-                </Box>
-                <Avatar sx={{ bgcolor: 'success.light', p: 1 }}>
-                  <GroupIcon />
-                </Avatar>
-              </Box>
-              <LinearProgress 
-                variant="determinate" 
-                value={Math.min(stats.todayGuests.progress, 100)} 
-                sx={{ mt: 2, height: 6, borderRadius: 3, bgcolor: 'success.lighter',
-                  '& .MuiLinearProgress-bar': { borderRadius: 3, bgcolor: 'success.main' }
-                }} 
-              />
-            </StyledStatBox>
-
-            {/* الوقت الأكثر حجزاً */}
-            <StyledStatBox index={3}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Box>
-                  <Typography variant="h3" sx={{ color: '#9c27b0', fontWeight: 700 }}>
-                    {stats.mostBookedTime.time}
-                  </Typography>
-                  <Typography variant="body1" sx={{ color: 'text.secondary' }}>
-                    الوقت الأكثر حجزاً
-                  </Typography>
-                </Box>
-                <Avatar sx={{ bgcolor: 'secondary.light', p: 1 }}>
-                  <AccessTimeIcon />
-                </Avatar>
-              </Box>
-              <LinearProgress 
-                variant="determinate" 
-                value={Math.min(stats.mostBookedTime.progress, 100)} 
-                sx={{ mt: 2, height: 6, borderRadius: 3, bgcolor: 'secondary.lighter',
-                  '& .MuiLinearProgress-bar': { borderRadius: 3, bgcolor: 'secondary.main' }
-                }} 
-              />
-            </StyledStatBox>
-          </Stack>
-
-          {/* سلايدر للشاشات الصغيرة */}
-          <Box sx={{ 
-            display: { xs: 'block', md: 'none' },  // إظهار في الشاشات الصغيرة فقط
-            mx: -2  // تعويض padding الصفحة
-          }}>
+          <Box sx={{ mx: -2 }}>
             <Swiper
               modules={[Pagination]}
               pagination={{ clickable: true }}
               spaceBetween={16}
               slidesPerView={1}
-              style={{ padding: '20px 16px 40px' }}
+              breakpoints={{
+                // عند 600px وأكبر
+                600: {
+                  slidesPerView: 2,
+                  spaceBetween: 16,
+                },
+                // عند 900px وأكبر
+                900: {
+                  slidesPerView: 3,
+                  spaceBetween: 16,
+                },
+                // عند 1200px وأكبر
+                1200: {
+                  slidesPerView: 4,
+                  spaceBetween: 16,
+                },
+              }}
+              style={{ 
+                padding: '20px 16px 20px',
+                width: '100%'
+              }}
             >
+              {/* حجز اليوم */}
               <SwiperSlide>
                 <StyledStatBox index={0}>
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1410,47 +1335,16 @@ const AdminDashboard = () => {
                   <LinearProgress 
                     variant="determinate" 
                     value={Math.min(stats.todayBookings.progress, 100)} 
-                    sx={{ 
-                      mt: 2,
-                      height: 6,
-                      borderRadius: 3,
-                      bgcolor: 'primary.lighter',
-                      '& .MuiLinearProgress-bar': {
-                        borderRadius: 3,
-                        bgcolor: 'primary.main'
-                      }
+                    sx={{ mt: 2, height: 6, borderRadius: 3, bgcolor: 'primary.lighter',
+                      '& .MuiLinearProgress-bar': { borderRadius: 3, bgcolor: 'primary.main' }
                     }} 
                   />
                 </StyledStatBox>
               </SwiperSlide>
 
+              {/* عدد الحجوزات */}
               <SwiperSlide>
                 <StyledStatBox index={1}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Box>
-                      <Typography variant="h3" sx={{ color: '#2e7d32', fontWeight: 700 }}>
-                        {calculateTotalGuests(filteredBookings)}
-                      </Typography>
-                      <Typography variant="body1" sx={{ color: 'text.secondary' }}>
-                        عدد الأشخاص
-                      </Typography>
-                    </Box>
-                    <Avatar sx={{ bgcolor: 'success.light', p: 1 }}>
-                      <GroupIcon />
-                    </Avatar>
-                  </Box>
-                  <LinearProgress 
-                    variant="determinate" 
-                    value={Math.min(stats.todayGuests.progress, 100)} 
-                    sx={{ mt: 2, height: 6, borderRadius: 3, bgcolor: 'success.lighter',
-                      '& .MuiLinearProgress-bar': { borderRadius: 3, bgcolor: 'success.main' }
-                    }} 
-                  />
-                </StyledStatBox>
-              </SwiperSlide>
-
-              <SwiperSlide>
-                <StyledStatBox index={2}>
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <Box>
                       <Typography variant="h3" sx={{ color: '#ed6c02', fontWeight: 700 }}>
@@ -1474,6 +1368,33 @@ const AdminDashboard = () => {
                 </StyledStatBox>
               </SwiperSlide>
 
+              {/* عدد الأشخاص */}
+              <SwiperSlide>
+                <StyledStatBox index={2}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Box>
+                      <Typography variant="h3" sx={{ color: '#2e7d32', fontWeight: 700 }}>
+                        {calculateTotalGuests(filteredBookings)}
+                      </Typography>
+                      <Typography variant="body1" sx={{ color: 'text.secondary' }}>
+                        عدد الأشخاص
+                      </Typography>
+                    </Box>
+                    <Avatar sx={{ bgcolor: 'success.light', p: 1 }}>
+                      <GroupIcon />
+                    </Avatar>
+                  </Box>
+                  <LinearProgress 
+                    variant="determinate" 
+                    value={Math.min(stats.todayGuests.progress, 100)} 
+                    sx={{ mt: 2, height: 6, borderRadius: 3, bgcolor: 'success.lighter',
+                      '& .MuiLinearProgress-bar': { borderRadius: 3, bgcolor: 'success.main' }
+                    }} 
+                  />
+                </StyledStatBox>
+              </SwiperSlide>
+
+              {/* الوقت الأكثر حجزاً */}
               <SwiperSlide>
                 <StyledStatBox index={3}>
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1716,6 +1637,7 @@ const AdminDashboard = () => {
                   <StyledTableCell>الاسم</StyledTableCell>
                   <StyledTableCell>الجوال</StyledTableCell>
                   <StyledTableCell>الأشخاص</StyledTableCell>
+                  <StyledTableCell>يوم الحضور</StyledTableCell>
                   <StyledTableCell>وقت الحضور</StyledTableCell>
                   <StyledTableCell>تاريخ ووقت الحجز</StyledTableCell>
                   <StyledTableCell>
@@ -1762,12 +1684,12 @@ const AdminDashboard = () => {
                         </Box>
                       </StyledTableCell>
                       <StyledTableCell>
-                        {/* حساب الرقم التسلسلي بناءً على رقم الصفحة */}
                         {page * rowsPerPage + index + 1}
                       </StyledTableCell>
                       <StyledTableCell>{booking.name}</StyledTableCell>
                       <StyledTableCell>{booking.phone}</StyledTableCell>
                       <StyledTableCell>{booking.guests}</StyledTableCell>
+                      <StyledTableCell>{booking.day}</StyledTableCell>
                       <StyledTableCell>{formatTime(booking.time)}</StyledTableCell>
                       <StyledTableCell>
                         {booking.createdAt ? 
@@ -1814,7 +1736,8 @@ const AdminDashboard = () => {
             }
             sx={{
               '.MuiToolbar-root': {
-                paddingRight: '0 !important'
+                paddingRight: '0 !important',
+                paddingLeft: '0 !important'
               }
             }}
           />
@@ -1871,8 +1794,8 @@ const AdminDashboard = () => {
         <DialogActions sx={{
           p: 2, 
           pt: 0,
-          justifyContent: 'center',  // توسيط الأزرار
-          gap: 1  // مسافة بين الأزرار
+          justifyContent: 'center',
+          gap: 1
         }}>
           <Button 
             onClick={closeDeleteConfirm}
@@ -1894,7 +1817,7 @@ const AdminDashboard = () => {
             إلغاء
           </Button>
           <Button 
-            onClick={() => handleDeleteBooking(deleteConfirm.bookingId)}
+            onClick={handleDelete}
             variant="contained"
             size="small"
             color="error"
@@ -2007,6 +1930,23 @@ const AdminDashboard = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* إضافة Backdrop للتحميل */}
+      <Backdrop
+        sx={{ 
+          color: '#fff', 
+          zIndex: 9999, // زيادة قيمة zIndex
+          flexDirection: 'column',
+          gap: 2,
+          backgroundColor: 'rgba(0, 0, 0, 0.8)' // زيادة التعتيم
+        }}
+        open={isDeleting}
+      >
+        <CircularProgress size={60} color="inherit" />
+        <Typography variant="h6" color="inherit" sx={{ mt: 2 }}>
+          جاري حذف {selectedBookings.length} حجز...
+        </Typography>
+      </Backdrop>
     </PageWrapper>
   );
 };

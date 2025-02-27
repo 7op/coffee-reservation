@@ -256,31 +256,6 @@ app.get('/api/debug/users', async (req, res) => {
   }
 });
 
-// نقطة نهاية لحذف مستخدم بدون قيود CORS
-app.delete('/open-api/delete-user/:phone', async (req, res) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'DELETE');
-  
-  try {
-    await ensureDbConnected();
-    const { phone } = req.params;
-    
-    // تنظيف رقم الهاتف
-    const cleanPhone = phone.replace(/[\s-]+/g, '');
-    
-    // حذف المستخدم
-    const result = await usersCollection.deleteOne({ phone: cleanPhone });
-    
-    if (result.deletedCount === 1) {
-      res.json({ success: true, message: 'تم حذف المستخدم بنجاح' });
-    } else {
-      res.status(404).json({ error: 'المستخدم غير موجود' });
-    }
-  } catch (error) {
-    res.status(500).json({ error: 'فشل في حذف المستخدم' });
-  }
-});
-
 // الاتصال بقاعدة البيانات
 const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/coffee-reservation';
 const client = new MongoClient(uri);
