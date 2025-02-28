@@ -144,21 +144,6 @@ app.post('/api/bookings', async (req, res) => {
     const todayBookings = await getTodayBookingsCount();
 
     if (todayBookings >= maxDailyBookings) {
-      // تحديث حالة الحجز لإغلاقه
-      await settingsCollection.updateOne(
-        { type: 'booking' },
-        { $set: { enabled: false } }
-      );
-      
-      // إرسال تحديث شامل
-      io.emit('bookingStatusUpdated', {
-        bookingEnabled: false,
-        maxDailyBookings,
-        todayBookings,
-        remainingBookings: 0,
-        bookingStatus: ''
-      });
-      
       return res.status(403).json({ error: 'تم إيقاف الحجز تلقائياً لاكتمال العدد المسموح به' });
     }
 
@@ -170,30 +155,27 @@ app.post('/api/bookings', async (req, res) => {
     
     // تحديث وإرسال العبارة الجديدة
     const remainingBookings = maxDailyBookings - (todayBookings + 1);
-    const bookingStatus = `متبقي ${remainingBookings} حجز من أصل ${maxDailyBookings} حجز`;
     
-    // تحديث العبارة في قاعدة البيانات
-    await settingsCollection.updateOne(
-      { type: 'maxDailyBookings' },
-      { 
-        $set: { 
-          remainingBookings,
-          bookingStatus,
-          todayBookings: todayBookings + 1
-        }
-      }
-    );
-
-    // إرسال تحديث شامل
-    io.emit('bookingStatusUpdated', {
-      maxDailyBookings,
-      todayBookings: todayBookings + 1,
-      remainingBookings,
-      bookingStatus,
-      bookingEnabled: true
-    });
+    // إذا كان هذا آخر حجز، نغلق الحجز مباشرة
+    if (remainingBookings === 0) {
+      setTimeout(async () => {
+        await settingsCollection.updateOne(
+          { type: 'booking' },
+          { $set: { enabled: false } }
+        );
+        
+        // إرسال تحديث شامل
+        io.emit('bookingStatusUpdated', {
+          bookingEnabled: false,
+          maxDailyBookings,
+          todayBookings: todayBookings + 1,
+          remainingBookings: 0,
+          bookingStatus: ''
+        });
+      }, 10000); // تأخير 10 ثواني لإظهار رسالة النجاح أولاً
+    }
     
-    res.json({ ...result, remainingBookings, bookingStatus });
+    res.json({ ...result, remainingBookings });
   } catch (error) {
     console.error('Error in booking:', error);
     res.status(500).json({ error: 'Failed to save booking' });
