@@ -1720,10 +1720,10 @@ const AdminDashboard = () => {
                       />
                     </Box>
                   </StyledTableCell>
-                  <StyledTableCell>الرقم</StyledTableCell>
-                  <StyledTableCell>الاسم</StyledTableCell>
-                  <StyledTableCell>الجوال</StyledTableCell>
-                  <StyledTableCell>الأشخاص</StyledTableCell>
+                  <StyledTableCell>رقـم الحجـز</StyledTableCell>
+                  <StyledTableCell>اسـم العميل</StyledTableCell>
+                  <StyledTableCell>رقــــم الجــــوال</StyledTableCell>
+                  <StyledTableCell>عـــــــدد الأشخاص</StyledTableCell>
                   <StyledTableCell>يوم الحضور</StyledTableCell>
                   <StyledTableCell>وقت الحضور</StyledTableCell>
                   <StyledTableCell>تاريخ ووقت الحجز</StyledTableCell>
@@ -1771,7 +1771,7 @@ const AdminDashboard = () => {
                         </Box>
                       </StyledTableCell>
                       <StyledTableCell>
-                        {page * rowsPerPage + index + 1}
+                        {filteredBookings.length - (page * rowsPerPage + index)}
                       </StyledTableCell>
                       <StyledTableCell>{booking.name}</StyledTableCell>
                       <StyledTableCell>{booking.phone}</StyledTableCell>

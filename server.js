@@ -26,7 +26,6 @@ const io = new Server(httpServer, {
       "https://6lb.online",
       "http://localhost:3000",
       "http://localhost:5000",
-      "https://coffee-reservation-hyam2.vercel.app",
       process.env.FRONTEND_URL || "https://6lb.online"
     ],
     methods: ["GET", "POST", "PUT", "DELETE"],
@@ -46,7 +45,6 @@ app.use(cors({
     "https://6lb.online",
     "http://localhost:3000",
     "http://localhost:5000",
-    "https://coffee-reservation-hyam2.vercel.app",
     process.env.FRONTEND_URL || "https://6lb.online"
   ],
   methods: ["GET", "POST", "PUT", "DELETE"],
@@ -94,7 +92,7 @@ app.post('/api/settings/booking', async (req, res) => {
       const remainingBookings = maxDailyBookings - todayBookings;
       const bookingStatus = enabled 
         ? `متبقي ${remainingBookings} حجز من أصل ${maxDailyBookings} حجز`
-        : 'الحجز مغلق حالياً';
+        : '';
 
       // إرسال تحديث شامل
       io.emit('bookingStatusUpdated', {
@@ -158,7 +156,7 @@ app.post('/api/bookings', async (req, res) => {
         maxDailyBookings,
         todayBookings,
         remainingBookings: 0,
-        bookingStatus: `تم اكتمال العدد: ${maxDailyBookings} حجز`
+        bookingStatus: ''
       });
       
       return res.status(403).json({ error: 'تم إيقاف الحجز تلقائياً لاكتمال العدد المسموح به' });

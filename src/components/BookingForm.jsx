@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   TextField,
@@ -135,64 +135,53 @@ const BookingForm = () => {
     const saved = localStorage.getItem('maxGuestsPerBooking');
     return saved ? parseInt(saved) : 10;
   });
+  const [bookingStatus, setBookingStatus] = useState('');
+  const socketRef = useRef(null);
 
-  // جلب حالة الحجز عند تحميل النموذج
+  // دمج كل تحديثات Socket.IO في useEffect واحد
   useEffect(() => {
-    const fetchBookingStatus = async () => {
-      try {
-        const response = await fetch(`${SERVER_URL}/api/settings/booking`);
-        const data = await response.json();
-        setIsBookingEnabled(data.enabled);
-      } catch (error) {
-        // يمكنك إضافة إشعار خطأ هنا
-      }
-    };
-
-    fetchBookingStatus();
-
-    // الاستماع لتغييرات الإعدادات
-    const socket = io(SERVER_URL, {
+    // إنشاء اتصال Socket.IO
+    socketRef.current = io(SERVER_URL, {
       transports: ['websocket'],
-      upgrade: false
+      upgrade: false,
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000
     });
 
-    socket.on('settingsUpdated', (data) => {
-      if (data.bookingEnabled !== undefined) {
-        setIsBookingEnabled(data.bookingEnabled);
-      }
-    });
-
-    return () => {
-      socket.off('settingsUpdated');
-      socket.disconnect();
-    };
-  }, []);
-
-  // تعديل useEffect لتحديث maxGuestsPerBooking من الخادم
-  useEffect(() => {
-    const fetchSettings = async () => {
+    // جلب الإعدادات الأولية
+    const fetchInitialSettings = async () => {
       try {
-        const response = await fetch(`${SERVER_URL}/api/settings/maxGuests`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.maxGuests) {
-            setMaxGuestsPerBooking(data.maxGuests);
-            localStorage.setItem('maxGuestsPerBooking', data.maxGuests);
+        // جلب حالة الحجز
+        const bookingResponse = await fetch(`${SERVER_URL}/api/settings/booking`);
+        const bookingData = await bookingResponse.json();
+        setIsBookingEnabled(bookingData.enabled);
+        setBookingStatus(bookingData.bookingStatus || '');
+
+        // جلب الحد الأقصى لعدد الأشخاص
+        const guestsResponse = await fetch(`${SERVER_URL}/api/settings/maxGuests`);
+        if (guestsResponse.ok) {
+          const guestsData = await guestsResponse.json();
+          if (guestsData.maxGuests) {
+            setMaxGuestsPerBooking(guestsData.maxGuests);
+            localStorage.setItem('maxGuestsPerBooking', guestsData.maxGuests);
           }
         }
       } catch (error) {
-        console.error('Error fetching settings:', error);
+        console.error('Error fetching initial settings:', error);
       }
     };
 
-    fetchSettings();
+    fetchInitialSettings();
 
-    const socket = io(SERVER_URL, {
-      transports: ['websocket'],
-      upgrade: false
-    });
-
-    socket.on('settingsUpdated', (data) => {
+    // الاستماع لتحديثات الإعدادات
+    socketRef.current.on('settingsUpdated', (data) => {
+      if (data.bookingEnabled !== undefined) {
+        setIsBookingEnabled(data.bookingEnabled);
+      }
+      if (data.bookingStatus) {
+        setBookingStatus(data.bookingStatus);
+      }
       if (data.maxGuests) {
         setMaxGuestsPerBooking(data.maxGuests);
         localStorage.setItem('maxGuestsPerBooking', data.maxGuests);
@@ -204,9 +193,38 @@ const BookingForm = () => {
       }
     });
 
+    // الاستماع لتحديثات حالة الحجز
+    socketRef.current.on('bookingStatusUpdated', (data) => {
+      if (data.bookingEnabled !== undefined) {
+        setIsBookingEnabled(data.bookingEnabled);
+      }
+      if (data.bookingStatus) {
+        setBookingStatus(data.bookingStatus);
+      }
+      if (data.maxDailyBookings) {
+        // تحديث أي معلومات إضافية عن الحجوزات اليومية إذا لزم الأمر
+      }
+    });
+
+    // معالجة أخطاء الاتصال
+    socketRef.current.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
+      // محاولة إعادة الاتصال بعد ثانية
+      setTimeout(() => {
+        if (socketRef.current) {
+          socketRef.current.connect();
+        }
+      }, 1000);
+    });
+
+    // تنظيف عند إزالة المكون
     return () => {
-      socket.off('settingsUpdated');
-      socket.disconnect();
+      if (socketRef.current) {
+        socketRef.current.off('settingsUpdated');
+        socketRef.current.off('bookingStatusUpdated');
+        socketRef.current.off('connect_error');
+        socketRef.current.disconnect();
+      }
     };
   }, [booking.guests]); // إضافة booking.guests للتبعيات
 
@@ -223,6 +241,7 @@ const BookingForm = () => {
       alert('عذراً، الحجز مغلق حالياً');
       return;
     }
+
     try {
       const response = await fetch(`${SERVER_URL}${API_ENDPOINTS.bookings}`, {
         method: 'POST',
@@ -237,7 +256,8 @@ const BookingForm = () => {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'حدث خطأ أثناء الحجز');
       }
 
       const data = await response.json();
@@ -247,7 +267,7 @@ const BookingForm = () => {
         setTimeout(() => setSuccess(false), 10000);
       }
     } catch (error) {
-      // يمكنك إضافة إشعار خطأ هنا
+      alert(error.message || 'حدث خطأ أثناء الحجز');
     }
   };
 
@@ -309,9 +329,28 @@ const BookingForm = () => {
                 color: '#012070',
                 textAlign: 'center',
               }}>
-                <Typography sx={{ fontSize: { xs: '0.875rem', sm: '1rem' }, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
-                  <span role="img" aria-label="warning">⚠️</span>
-                  عذراً ، تم إغلاق الحجز حالياً لهذا اليوم .
+                <Typography sx={{ 
+                  fontSize: { xs: '0.875rem', sm: '1rem' }, 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  gap: 1,
+                  flexDirection: 'column'
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <span role="img" aria-label="warning">⚠️</span>
+                    عذراً ، تم إغلاق الحجز حالياً لهذا اليوم
+                  </Box>
+                  {bookingStatus && (
+                    <Typography sx={{ 
+                      fontSize: { xs: '0.8rem', sm: '0.9rem' },
+                      color: '#012070',
+                      opacity: 0.8,
+                      mt: 1
+                    }}>
+                      {bookingStatus}
+                    </Typography>
+                  )}
                 </Typography>
               </Box>
             )}
