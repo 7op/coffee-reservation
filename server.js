@@ -558,6 +558,11 @@ app.get('/api/debug/users', async (req, res) => {
   }
 });
 
+// مسار خفيف للمراقبة
+app.get('/ping', (req, res) => {
+  res.status(200).send('OK');
+});
+
 // الاتصال بقاعدة البيانات
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://your_username:your_password@your_cluster.mongodb.net/coffee-reservation';
 
