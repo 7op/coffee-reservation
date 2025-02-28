@@ -86,7 +86,23 @@ app.post('/api/settings/booking', async (req, res) => {
     );
     
     if (result.acknowledged) {
-      io.emit('settingsUpdated', { bookingEnabled: enabled });
+      const todayBookings = await getTodayBookingsCount();
+      const maxSettings = await settingsCollection.findOne({ type: 'maxDailyBookings' });
+      const maxDailyBookings = maxSettings?.value || 50;
+      const remainingBookings = maxDailyBookings - todayBookings;
+      const bookingStatus = enabled 
+        ? `متبقي ${remainingBookings} حجز من أصل ${maxDailyBookings} حجز`
+        : 'الحجز مغلق حالياً';
+
+      // إرسال تحديث شامل
+      io.emit('bookingStatusUpdated', {
+        bookingEnabled: enabled,
+        maxDailyBookings,
+        todayBookings,
+        remainingBookings,
+        bookingStatus
+      });
+      
       res.json({ success: true });
     } else {
       throw new Error('فشل في تحديث الإعدادات');
@@ -133,7 +149,16 @@ app.post('/api/bookings', async (req, res) => {
         { type: 'booking' },
         { $set: { enabled: false } }
       );
-      io.emit('settingsUpdated', { bookingEnabled: false });
+      
+      // إرسال تحديث شامل
+      io.emit('bookingStatusUpdated', {
+        bookingEnabled: false,
+        maxDailyBookings,
+        todayBookings,
+        remainingBookings: 0,
+        bookingStatus: `تم اكتمال العدد: ${maxDailyBookings} حجز`
+      });
+      
       return res.status(403).json({ error: 'تم إيقاف الحجز تلقائياً لاكتمال العدد المسموح به' });
     }
 
@@ -153,17 +178,19 @@ app.post('/api/bookings', async (req, res) => {
       { 
         $set: { 
           remainingBookings,
-          bookingStatus
+          bookingStatus,
+          todayBookings: todayBookings + 1
         }
       }
     );
 
-    // إرسال التحديث لجميع العملاء
+    // إرسال تحديث شامل
     io.emit('bookingStatusUpdated', {
       maxDailyBookings,
       todayBookings: todayBookings + 1,
       remainingBookings,
-      bookingStatus
+      bookingStatus,
+      bookingEnabled: true
     });
     
     res.json({ ...result, remainingBookings, bookingStatus });
@@ -409,16 +436,28 @@ app.post('/api/settings/maxDailyBookings', async (req, res) => {
   try {
     await ensureDbConnected();
     const { maxDailyBookings } = req.body;
+    
+    // التحقق من وجود القيمة
+    if (maxDailyBookings === undefined || maxDailyBookings === null) {
+      return res.status(400).json({ error: 'يجب تحديد قيمة للحد الأقصى للحجوزات' });
+    }
+
+    const value = parseInt(maxDailyBookings);
     const todayBookings = await getTodayBookingsCount();
     
-    // التحقق من صحة القيمة
-    const value = parseInt(maxDailyBookings);
-    if (isNaN(value) || value < 1) {
-      return res.status(400).json({ error: 'يجب إدخال رقم صحيح أكبر من 0' });
+    // التحقق من حالة الحجز
+    const settings = await settingsCollection.findOne({ type: 'booking' });
+    const isBookingEnabled = settings?.enabled ?? true;
+
+    // التحقق من القيمة فقط إذا كان الحجز مفعل
+    if (isBookingEnabled && (isNaN(value) || value < 1)) {
+      return res.status(400).json({ error: 'يجب إدخال رقم صحيح أكبر من 0 للحد الأقصى للحجوزات' });
     }
 
     const remainingBookings = value - todayBookings;
-    const bookingStatus = `متبقي ${remainingBookings} حجز من أصل ${value} حجز`;
+    const bookingStatus = isBookingEnabled 
+      ? `متبقي ${remainingBookings} حجز من أصل ${value} حجز`
+      : 'الحجز مغلق حالياً';
 
     const result = await settingsCollection.updateOne(
       { type: 'maxDailyBookings' },
@@ -435,26 +474,27 @@ app.post('/api/settings/maxDailyBookings', async (req, res) => {
       { upsert: true }
     );
     
-    if (result.acknowledged) {
-      // إرسال التحديث لجميع العملاء المتصلين
-      io.emit('bookingStatusUpdated', { 
-        maxDailyBookings: value, 
-        todayBookings,
-        remainingBookings,
-        bookingStatus
-      });
-      
-      res.json({ 
-        success: true,
-        maxDailyBookings: value,
-        todayBookings,
-        remainingBookings,
-        bookingText: 'حجز',
-        bookingStatus
-      });
-    } else {
-      throw new Error('فشل في تحديث الإعدادات');
+    if (!result.acknowledged) {
+      return res.status(500).json({ error: 'فشل في تحديث الإعدادات في قاعدة البيانات' });
     }
+
+    // إرسال التحديث لجميع العملاء المتصلين
+    io.emit('bookingStatusUpdated', { 
+      maxDailyBookings: value, 
+      todayBookings,
+      remainingBookings,
+      bookingStatus,
+      bookingEnabled: isBookingEnabled
+    });
+    
+    res.json({ 
+      success: true,
+      maxDailyBookings: value,
+      todayBookings,
+      remainingBookings,
+      bookingText: 'حجز',
+      bookingStatus
+    });
   } catch (error) {
     console.error('Error updating maxDailyBookings:', error);
     res.status(500).json({ error: 'فشل في تحديث الإعدادات' });

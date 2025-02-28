@@ -626,11 +626,72 @@ const AdminDashboard = () => {
       }
     };
 
+    const fetchSettings = async () => {
+      try {
+        const maxDailyResponse = await fetch(`${SERVER_URL}${API_ENDPOINTS.maxDailyBookings}`);
+        if (maxDailyResponse.ok) {
+          const data = await maxDailyResponse.json();
+          if (data.maxDailyBookings !== undefined) {
+            setMaxDailyBookings(data.maxDailyBookings);
+            setOriginalMaxBookings(data.maxDailyBookings);
+          }
+        }
+
+        const maxGuestsResponse = await fetch(`${SERVER_URL}${API_ENDPOINTS.maxGuests}`);
+        if (maxGuestsResponse.ok) {
+          const data = await maxGuestsResponse.json();
+          if (data.maxGuests !== undefined) {
+            setMaxGuestsPerBooking(data.maxGuests);
+            localStorage.setItem('maxGuestsPerBooking', data.maxGuests.toString());
+          }
+        }
+
+        const bookingStatusResponse = await fetch(`${SERVER_URL}/api/settings/booking`);
+        if (bookingStatusResponse.ok) {
+          const data = await bookingStatusResponse.json();
+          setBookingEnabled(data.enabled);
+        }
+      } catch (error) {
+        console.error('Error fetching settings:', error);
+      }
+    };
+
+    // جلب البيانات الأولية
     fetchBookings();
+    fetchSettings();
+
+    // الاستماع لجميع الأحداث
     socket.on('bookingUpdated', fetchBookings);
+    socket.on('settingsUpdated', (data) => {
+      if (data.maxDailyBookings !== undefined) {
+        setMaxDailyBookings(data.maxDailyBookings);
+        localStorage.setItem('maxDailyBookings', data.maxDailyBookings.toString());
+      }
+      if (data.maxGuests !== undefined) {
+        setMaxGuestsPerBooking(data.maxGuests);
+        localStorage.setItem('maxGuestsPerBooking', data.maxGuests.toString());
+      }
+      if (data.bookingEnabled !== undefined) {
+        setBookingEnabled(data.bookingEnabled);
+      }
+      if (data.notificationsEnabled !== undefined) {
+        setIsSoundEnabled(data.notificationsEnabled);
+      }
+    });
+    socket.on('bookingStatusUpdated', (data) => {
+      if (data.maxDailyBookings !== undefined) {
+        setMaxDailyBookings(data.maxDailyBookings);
+      }
+      if (data.remainingBookings !== undefined) {
+        setRemainingBookings(data.remainingBookings);
+      }
+      fetchBookings(); // تحديث قائمة الحجوزات
+    });
 
     return () => {
       socket.off('bookingUpdated');
+      socket.off('settingsUpdated');
+      socket.off('bookingStatusUpdated');
       socket.disconnect();
     };
   }, [isSoundEnabled]);
@@ -684,155 +745,6 @@ const AdminDashboard = () => {
     }
     return time.getHours() * 60 + time.getMinutes();
   };
-
-  useEffect(() => {
-    const fetchSettings = async () => {
-      try {
-        // جلب الحد الأقصى للحجوزات اليومية
-        const maxDailyResponse = await fetch(`${SERVER_URL}${API_ENDPOINTS.maxDailyBookings}`);
-        if (maxDailyResponse.ok) {
-          const data = await maxDailyResponse.json();
-          if (data.maxDailyBookings !== undefined) {
-            setMaxDailyBookings(data.maxDailyBookings);
-            setOriginalMaxBookings(data.maxDailyBookings); // حفظ القيمة الأصلية
-          }
-        } else {
-          console.error('Failed to fetch maxDailyBookings:', await maxDailyResponse.text());
-        }
-
-        // جلب الحد الأقصى لعدد الأشخاص
-        const maxGuestsResponse = await fetch(`${SERVER_URL}${API_ENDPOINTS.maxGuests}`);
-        if (maxGuestsResponse.ok) {
-          const data = await maxGuestsResponse.json();
-          if (data.maxGuests !== undefined) {
-            setMaxGuestsPerBooking(data.maxGuests);
-            localStorage.setItem('maxGuestsPerBooking', data.maxGuests.toString());
-          }
-        } else {
-          console.error('Failed to fetch maxGuests:', await maxGuestsResponse.text());
-        }
-      } catch (error) {
-        console.error('Error fetching settings:', error);
-      }
-    };
-
-    fetchSettings();
-
-    // الاستماع لتحديثات الإعدادات
-    const socket = io(SERVER_URL, {
-      transports: ['websocket'],
-      upgrade: false
-    });
-
-    socket.on('settingsUpdated', (data) => {
-      if (data.maxDailyBookings !== undefined) {
-        setMaxDailyBookings(data.maxDailyBookings);
-        localStorage.setItem('maxDailyBookings', data.maxDailyBookings.toString());
-      }
-      if (data.maxGuests !== undefined) {
-        setMaxGuestsPerBooking(data.maxGuests);
-        localStorage.setItem('maxGuestsPerBooking', data.maxGuests.toString());
-      }
-    });
-
-    return () => {
-      socket.off('settingsUpdated');
-      socket.disconnect();
-    };
-  }, []);
-
-  useEffect(() => {
-    const fetchBookingStatus = async () => {
-      try {
-        const response = await fetch(`${SERVER_URL}/api/settings/booking`);
-        if (!response.ok) {
-          throw new Error('فشل في جلب حالة الحجز');
-        }
-        const data = await response.json();
-        setBookingEnabled(data.enabled);
-      } catch (error) {
-        console.error('Error fetching booking status:', error);
-      }
-    };
-
-    fetchBookingStatus();
-
-    // الاستماع لتحديثات الإعدادات
-    const socket = io(SERVER_URL, {
-      transports: ['websocket'],
-      upgrade: false
-    });
-
-    socket.on('settingsUpdated', (data) => {
-      if (data.bookingEnabled !== undefined) {
-        setBookingEnabled(data.bookingEnabled);
-      }
-    });
-
-    return () => {
-      socket.off('settingsUpdated');
-      socket.disconnect();
-    };
-  }, []);
-
-  // تعديل useEffect لحساب عدد الحجوزات المتبقية
-  useEffect(() => {
-    const todayBookings = bookings.filter(booking => {
-      const bookingDate = new Date(booking.createdAt);
-      const today = new Date();
-      return (
-        bookingDate.getDate() === today.getDate() &&
-        bookingDate.getMonth() === today.getMonth() &&
-        bookingDate.getFullYear() === today.getFullYear()
-      );
-    });
-
-    const remaining = maxDailyBookings - todayBookings.length;
-    setRemainingBookings(remaining);
-
-    // إغلاق الحجز تلقائياً فقط عندما يصل العدد إلى الحد الأقصى
-    if (todayBookings.length >= maxDailyBookings && 
-        bookingEnabled && 
-        maxDailyBookings > 0 &&
-        todayBookings.length > 0) {  
-      
-      setTimeout(async () => {
-        try {
-          const currentTodayBookings = bookings.filter(booking => {
-            const bookingDate = new Date(booking.createdAt);
-            const today = new Date();
-            return (
-              bookingDate.getDate() === today.getDate() &&
-              bookingDate.getMonth() === today.getMonth() &&
-              bookingDate.getFullYear() === today.getFullYear()
-            );
-          });
-
-          if (currentTodayBookings.length >= maxDailyBookings) {
-            const response = await fetch(`${SERVER_URL}/api/settings/booking`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({ enabled: false })
-            });
-
-            if (!response.ok) {
-              throw new Error('فشل في تحديث الإعدادات');
-            }
-
-            const data = await response.json();
-            if (data.success) {
-              setBookingEnabled(false);
-              alert('تم إيقاف الحجز تلقائياً لاكتمال العدد المسموح به');
-            }
-          }
-        } catch (error) {
-          console.error('Error updating booking status:', error);
-        }
-      }, 10000);
-    }
-  }, [bookings, maxDailyBookings, bookingEnabled]);
 
   useEffect(() => {
     // جلب حالة التنبيهات من السيرفر عند تحميل الصفحة
@@ -1011,16 +923,28 @@ const AdminDashboard = () => {
 
   // تعديل دالة حفظ الإعدادات
   const handleSaveSettings = async () => {
-    // التحقق من القيم
-    if (bookingEnabled) {
-      if (maxDailyBookings < 1 || maxGuestsPerBooking < 1) {
-        alert('يجب تحديد قيمة 1 على الأقل للحد الأقصى للحجوزات وعدد الأشخاص، أو تعطيل الحجز');
-        return;
-      }
-    }
-
     try {
-      const response = await fetch(`${SERVER_URL}/api/settings/booking`, {
+      // حفظ الحد الأقصى للحجوزات أولاً
+      if (maxDailyBookings !== originalMaxBookings) {
+        const maxBookingsResponse = await fetch(`${SERVER_URL}/api/settings/maxDailyBookings`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ maxDailyBookings })
+        });
+
+        if (!maxBookingsResponse.ok) {
+          const errorData = await maxBookingsResponse.json();
+          throw new Error(errorData.error || 'فشل في تحديث الحد الأقصى للحجوزات');
+        }
+
+        // تحديث القيمة الأصلية بعد النجاح
+        setOriginalMaxBookings(maxDailyBookings);
+      }
+
+      // ثم حفظ حالة الحجز
+      const bookingResponse = await fetch(`${SERVER_URL}/api/settings/booking`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -1028,18 +952,16 @@ const AdminDashboard = () => {
         body: JSON.stringify({ enabled: bookingEnabled })
       });
 
-      if (!response.ok) {
-        throw new Error('فشل في تحديث الإعدادات');
+      if (!bookingResponse.ok) {
+        const errorData = await bookingResponse.json();
+        throw new Error(errorData.error || 'فشل في تحديث حالة الحجز');
       }
 
-      const data = await response.json();
-      if (data.success) {
-        alert(bookingEnabled ? 'تم فتح الحجز بنجاح' : 'تم إغلاق الحجز بنجاح');
-        handleClose();
-      }
+      alert('تم حفظ الإعدادات بنجاح');
+      handleClose();
     } catch (error) {
-      console.error('Error updating booking status:', error);
-      alert('حدث خطأ أثناء تحديث الإعدادات');
+      console.error('Error in handleSaveSettings:', error);
+      alert(error.message || 'حدث خطأ أثناء تحديث الإعدادات');
     }
   };
 
