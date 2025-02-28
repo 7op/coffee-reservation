@@ -136,6 +136,7 @@ const BookingForm = () => {
     return saved ? parseInt(saved) : 10;
   });
   const [bookingStatus, setBookingStatus] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const socketRef = useRef(null);
 
   // دمج كل تحديثات Socket.IO في useEffect واحد
@@ -231,6 +232,9 @@ const BookingForm = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    // منع تكرار الإرسال إذا كان هناك عملية حجز جارية
+    if (isSubmitting) return;
+    
     // التحقق من عدد الأشخاص
     if (parseInt(booking.guests) > maxGuestsPerBooking) {
       alert(`عذراً، الحد الأقصى المسموح به هو ${maxGuestsPerBooking} أشخاص للحجز الواحد`);
@@ -241,6 +245,8 @@ const BookingForm = () => {
       alert('عذراً، الحجز مغلق حالياً');
       return;
     }
+
+    setIsSubmitting(true);
 
     try {
       const response = await fetch(`${SERVER_URL}${API_ENDPOINTS.bookings}`, {
@@ -268,6 +274,8 @@ const BookingForm = () => {
       }
     } catch (error) {
       alert(error.message || 'حدث خطأ أثناء الحجز');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -329,28 +337,11 @@ const BookingForm = () => {
                 color: '#012070',
                 textAlign: 'center',
               }}>
-                <Typography sx={{ 
-                  fontSize: { xs: '0.875rem', sm: '1rem' }, 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center', 
-                  gap: 1,
-                  flexDirection: 'column'
-                }}>
+                <Typography>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <span role="img" aria-label="warning">⚠️</span>
                     عذراً ، تم إغلاق الحجز حالياً لهذا اليوم
                   </Box>
-                  {bookingStatus && (
-                    <Typography sx={{ 
-                      fontSize: { xs: '0.8rem', sm: '0.9rem' },
-                      color: '#012070',
-                      opacity: 0.8,
-                      mt: 1
-                    }}>
-                      {bookingStatus}
-                    </Typography>
-                  )}
                 </Typography>
               </Box>
             )}
@@ -450,6 +441,7 @@ const BookingForm = () => {
                     variant="contained" 
                     type="submit"
                     size="large"
+                    disabled={isSubmitting}
                     sx={{ 
                       mt: 2,
                       height: { xs: 48, sm: 56 },
@@ -460,10 +452,15 @@ const BookingForm = () => {
                       '&:hover': {
                         backgroundColor: '#012070',
                         boxShadow: '0 6px 16px rgba(1, 32, 112, 0.3)',
+                      },
+                      '&:disabled': {
+                        backgroundColor: '#012070',
+                        color: '#ffffff',
+                        opacity: 0.7,
                       }
                     }}
                   >
-                    تأكيد الحجز
+                    {isSubmitting ? 'جاري إرسال الحجز...' : 'تأكيد الحجز'}
                   </Button>
                 </Stack>
               </form>
