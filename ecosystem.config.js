@@ -4,8 +4,8 @@ export default {
     script: 'server.js',
     env_production: {
       NODE_ENV: 'production',
-      PORT: 4000,
-      MONGODB_URI: 'mongodb+srv://admin:Bader12345@hyam.blt6o.mongodb.net/coffee-reservation?retryWrites=true&w=majority&appName=hyam'
+      PORT: process.env.PORT || 4000,
+      MONGODB_URI: process.env.MONGODB_URI
     },
     instances: 1,
     autorestart: true,

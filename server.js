@@ -127,6 +127,25 @@ async function getTodayBookingsCount() {
   });
 }
 
+// دالة للتحقق من تكرار الحجز
+async function checkDuplicateBooking(phone) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const existingBooking = await bookingsCollection.findOne({
+    phone,
+    createdAt: {
+      $gte: today,
+      $lt: tomorrow
+    }
+  });
+
+  return existingBooking !== null;
+}
+
 // إضافة حجز جديد
 app.post('/api/bookings', async (req, res) => {
   try {
@@ -147,16 +166,35 @@ app.post('/api/bookings', async (req, res) => {
       return res.status(403).json({ error: 'تم إيقاف الحجز تلقائياً لاكتمال العدد المسموح به' });
     }
 
-    console.log('Received booking request:', req.body);
-    const booking = req.body;
-    booking.createdAt = new Date();
-    booking.status = 'pending';
+    // التحقق من تكرار الحجز
+    const isDuplicate = await checkDuplicateBooking(req.body.phone);
+    if (isDuplicate) {
+      return res.status(400).json({ error: 'عذراً، لا يمكن الحجز أكثر من مرة في نفس اليوم' });
+    }
+
+    const booking = {
+      ...req.body,
+      createdAt: new Date(),
+      status: 'pending'
+    };
+
     const result = await bookingsCollection.insertOne(booking);
     
-    // تحديث وإرسال العبارة الجديدة
+    // إرسال تحديث فوري
     const remainingBookings = maxDailyBookings - (todayBookings + 1);
+    io.emit('bookingUpdated');
     
-    // إذا كان هذا آخر حجز، نغلق الحجز مباشرة
+    // تحديث حالة الحجز
+    const bookingStatus = `متبقي ${remainingBookings} حجز من أصل ${maxDailyBookings} حجز`;
+    io.emit('bookingStatusUpdated', {
+      bookingEnabled: remainingBookings > 0,
+      maxDailyBookings,
+      todayBookings: todayBookings + 1,
+      remainingBookings,
+      bookingStatus
+    });
+
+    // إذا كان هذا آخر حجز، نغلق الحجز بعد 10 ثواني
     if (remainingBookings === 0) {
       setTimeout(async () => {
         await settingsCollection.updateOne(
@@ -164,21 +202,24 @@ app.post('/api/bookings', async (req, res) => {
           { $set: { enabled: false } }
         );
         
-        // إرسال تحديث شامل
         io.emit('bookingStatusUpdated', {
           bookingEnabled: false,
           maxDailyBookings,
           todayBookings: todayBookings + 1,
           remainingBookings: 0,
-          bookingStatus: ''
+          bookingStatus: 'عذراً، تم إغلاق الحجز حالياً لهذا اليوم'
         });
-      }, 10000); // تأخير 10 ثواني لإظهار رسالة النجاح أولاً
+      }, 10000);
     }
     
-    res.json({ ...result, remainingBookings });
+    res.json({ 
+      success: true,
+      remainingBookings,
+      bookingStatus
+    });
   } catch (error) {
     console.error('Error in booking:', error);
-    res.status(500).json({ error: 'Failed to save booking' });
+    res.status(500).json({ error: 'حدث خطأ أثناء الحجز' });
   }
 });
 

@@ -139,7 +139,6 @@ const BookingForm = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const socketRef = useRef(null);
 
-  // دمج كل تحديثات Socket.IO في useEffect واحد
   useEffect(() => {
     // إنشاء اتصال Socket.IO
     socketRef.current = io(SERVER_URL, {
@@ -147,133 +146,114 @@ const BookingForm = () => {
       upgrade: false,
       reconnection: true,
       reconnectionAttempts: 5,
-      reconnectionDelay: 1000
+      reconnectionDelay: 1000,
+      timeout: 10000
     });
 
-    // جلب الإعدادات الأولية
-    const fetchInitialSettings = async () => {
-      try {
-        // جلب حالة الحجز
-        const bookingResponse = await fetch(`${SERVER_URL}/api/settings/booking`);
-        const bookingData = await bookingResponse.json();
-        setIsBookingEnabled(bookingData.enabled);
-        setBookingStatus(bookingData.bookingStatus || '');
+    // معالجة أحداث الاتصال
+    socketRef.current.on('connect', () => {
+      console.log('تم الاتصال بالسيرفر بنجاح');
+      fetchInitialSettings();
+    });
 
-        // جلب الحد الأقصى لعدد الأشخاص
-        const guestsResponse = await fetch(`${SERVER_URL}/api/settings/maxGuests`);
-        if (guestsResponse.ok) {
-          const guestsData = await guestsResponse.json();
-          if (guestsData.maxGuests) {
-            setMaxGuestsPerBooking(guestsData.maxGuests);
-            localStorage.setItem('maxGuestsPerBooking', guestsData.maxGuests);
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching initial settings:', error);
-      }
-    };
+    socketRef.current.on('connect_error', (error) => {
+      console.error('خطأ في الاتصال:', error);
+      setBookingStatus('جاري إعادة الاتصال...');
+    });
 
-    fetchInitialSettings();
+    socketRef.current.on('reconnect', (attemptNumber) => {
+      console.log(`تم إعادة الاتصال بنجاح بعد ${attemptNumber} محاولات`);
+      fetchInitialSettings();
+    });
 
     // الاستماع لتحديثات الإعدادات
     socketRef.current.on('settingsUpdated', (data) => {
-      if (data.bookingEnabled !== undefined) {
-        setIsBookingEnabled(data.bookingEnabled);
-      }
-      if (data.bookingStatus) {
-        setBookingStatus(data.bookingStatus);
-      }
-      if (data.maxGuests) {
+      if (data.maxGuests !== undefined) {
         setMaxGuestsPerBooking(data.maxGuests);
-        localStorage.setItem('maxGuestsPerBooking', data.maxGuests);
-        
-        // تحديث عدد الأشخاص إذا تجاوز الحد الجديد
-        if (parseInt(booking.guests) > data.maxGuests) {
-          setBooking(prev => ({ ...prev, guests: data.maxGuests.toString() }));
-        }
+        localStorage.setItem('maxGuestsPerBooking', data.maxGuests.toString());
       }
     });
 
-    // الاستماع لتحديثات حالة الحجز
     socketRef.current.on('bookingStatusUpdated', (data) => {
-      if (data.bookingEnabled !== undefined) {
-        setIsBookingEnabled(data.bookingEnabled);
-      }
-      if (data.bookingStatus) {
-        setBookingStatus(data.bookingStatus);
-      }
-      if (data.maxDailyBookings) {
-        // تحديث أي معلومات إضافية عن الحجوزات اليومية إذا لزم الأمر
-      }
-    });
-
-    // معالجة أخطاء الاتصال
-    socketRef.current.on('connect_error', (error) => {
-      console.error('Socket connection error:', error);
-      // محاولة إعادة الاتصال بعد ثانية
-      setTimeout(() => {
-        if (socketRef.current) {
-          socketRef.current.connect();
-        }
-      }, 1000);
+      setIsBookingEnabled(data.bookingEnabled);
+      setBookingStatus(data.bookingStatus || '');
     });
 
     // تنظيف عند إزالة المكون
     return () => {
       if (socketRef.current) {
-        socketRef.current.off('settingsUpdated');
-        socketRef.current.off('bookingStatusUpdated');
-        socketRef.current.off('connect_error');
         socketRef.current.disconnect();
       }
     };
-  }, [booking.guests]); // إضافة booking.guests للتبعيات
+  }, []);
+
+  // دالة جلب الإعدادات الأولية
+  const fetchInitialSettings = async () => {
+    try {
+      const [bookingResponse, guestsResponse] = await Promise.all([
+        fetch(`${SERVER_URL}/api/settings/booking`),
+        fetch(`${SERVER_URL}/api/settings/maxGuests`)
+      ]);
+
+      if (bookingResponse.ok) {
+        const bookingData = await bookingResponse.json();
+        setIsBookingEnabled(bookingData.enabled);
+        setBookingStatus(bookingData.bookingStatus || '');
+      }
+
+      if (guestsResponse.ok) {
+        const guestsData = await guestsResponse.json();
+        if (guestsData.maxGuests) {
+          setMaxGuestsPerBooking(guestsData.maxGuests);
+          localStorage.setItem('maxGuestsPerBooking', guestsData.maxGuests.toString());
+        }
+      }
+    } catch (error) {
+      console.error('خطأ في جلب الإعدادات:', error);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    // منع تكرار الإرسال إذا كان هناك عملية حجز جارية
     if (isSubmitting) return;
-    
-    // التحقق من عدد الأشخاص
-    if (parseInt(booking.guests) > maxGuestsPerBooking) {
-      alert(`عذراً، الحد الأقصى المسموح به هو ${maxGuestsPerBooking} أشخاص للحجز الواحد`);
-      return;
-    }
-
-    if (!isBookingEnabled) {
-      alert('عذراً، الحجز مغلق حالياً');
-      return;
-    }
-
-    setIsSubmitting(true);
 
     try {
-      const response = await fetch(`${SERVER_URL}${API_ENDPOINTS.bookings}`, {
+      setIsSubmitting(true);
+
+      // التحقق من صحة المدخلات
+      if (!booking.name || !booking.phone || !booking.guests || !booking.time) {
+        throw new Error('الرجاء تعبئة جميع الحقول المطلوبة');
+      }
+
+      const response = await fetch(`${SERVER_URL}/api/bookings`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          ...booking,
-          createdAt: new Date(),
-          status: 'pending'
-        }),
+        body: JSON.stringify(booking),
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'حدث خطأ أثناء الحجز');
+        throw new Error(data.error || 'حدث خطأ في عملية الحجز');
       }
 
-      const data = await response.json();
-      if (data) {
-        setSuccess(true);
-        setBooking({ name: '', phone: '', guests: '', time: '', day: '' });
-        setTimeout(() => setSuccess(false), 10000);
-      }
+      setSuccess(true);
+      setBooking({
+        name: '',
+        phone: '',
+        guests: '',
+        time: new Date().toLocaleTimeString('en-US', {
+          hour12: false,
+          hour: '2-digit',
+          minute: '2-digit'
+        }),
+        day: '',
+      });
     } catch (error) {
-      alert(error.message || 'حدث خطأ أثناء الحجز');
+      console.error('خطأ:', error);
+      alert(error.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -313,7 +293,7 @@ const BookingForm = () => {
               </Typography>
             </Box>
 
-            {success && (
+            {success ? (
               <Box sx={{
                 p: 2,
                 borderRadius: 2,
@@ -326,9 +306,7 @@ const BookingForm = () => {
                    تم تأكيد حجزك بنجاح ! مبارك عليك الشهر ✨
                 </Typography>
               </Box>
-            )}
-
-            {!isBookingEnabled && (
+            ) : !isBookingEnabled ? (
               <Box sx={{
                 p: 2,
                 borderRadius: 2,
@@ -338,16 +316,18 @@ const BookingForm = () => {
                 textAlign: 'center',
               }}>
                 <Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Box sx={{ 
+                    display: 'flex', 
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 1 
+                  }}>
                     <span role="img" aria-label="warning">⚠️</span>
                     عذراً ، تم إغلاق الحجز حالياً لهذا اليوم
                   </Box>
                 </Typography>
               </Box>
-            )}
-
-            {/* إظهار النموذج فقط إذا كان الحجز مفتوح ولم يتم الحجز بنجاح */}
-            {!success && isBookingEnabled && (
+            ) : (
               <form onSubmit={handleSubmit}>
                 <Stack spacing={2.5}>
                   <StyledTextField
