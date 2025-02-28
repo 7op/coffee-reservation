@@ -26,6 +26,7 @@ const io = new Server(httpServer, {
       "https://6lb.online",
       "http://localhost:3000",
       "http://localhost:5000",
+      "https://coffee-reservation-hyam2.vercel.app",
       process.env.FRONTEND_URL || "https://6lb.online"
     ],
     methods: ["GET", "POST", "PUT", "DELETE"],
@@ -45,6 +46,7 @@ app.use(cors({
     "https://6lb.online",
     "http://localhost:3000",
     "http://localhost:5000",
+    "https://coffee-reservation-hyam2.vercel.app",
     process.env.FRONTEND_URL || "https://6lb.online"
   ],
   methods: ["GET", "POST", "PUT", "DELETE"],
